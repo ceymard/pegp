@@ -1,0 +1,22 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "module": "commonjs",
+	"moduleResolution": "node",
+        "declaration": true,
+        "sourceMap": true,
+        "experimentalDecorators": true,
+	"strictNullChecks": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noImplicitThis": true,
+        "noUnusedLocals": true,
+	"importHelpers": true,
+        "outDir": "./build",
+        "lib": ["es6"]
+    },
+    "files": [
+        "./src/index.ts"
+    ]
+
+}
