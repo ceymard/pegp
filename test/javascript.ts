@@ -7,8 +7,7 @@
 
 import {
   Any,
-  Either, Try, Re, _, Rule, LookAhead, Optional, Str, Z,
-  Language
+  Either, Try, Re, _, Rule, LookAhead, Optional, Str, Z
 } from '../src/rule'
 
 
@@ -159,7 +158,11 @@ const CODE_BLOCK = _(LBRACKET, Try(TOPLEVEL).until(LookAhead(RBRACKET)), RBRACKE
 
 // Forward declaration
 const OBJECT_LITERAL = _(LBRACKET,
-  LookAhead(Either(() => OBJECT_PROPERTY, RBRACKET, () => METHOD)),
+  LookAhead(Either(
+    () => OBJECT_PROPERTY, 
+    RBRACKET, 
+    () => METHOD
+  )),
   Try(Either(
     () => OBJECT_PROPERTY,
     () => METHOD,

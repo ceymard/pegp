@@ -1,5 +1,5 @@
 
-import {Stream, Tokenizer} from './tokenizer'
+import {TokenStream} from './tokenizer'
 
 export type RuleDecl = string | RegExp | BaseRule | (() => BaseRule)
 
@@ -17,21 +17,13 @@ function convert(r: RuleDecl[]): BaseRule {
   return r.length > 1 ? _(...r.map(convertRule)) : convertRule(r[0])
 }
 
-export class Token {
-  constructor(public str: string) { }
-  toString() { return this.str }
-}
 
-export type Result = (string|Token)[] | null
-
-export abstract class BaseRule {
-
-  abstract exec(s: Stream): Result;
-
-  run(s: Stream): Result {
+export function protectStreamState(target: BaseRule, prop: string, descriptor: PropertyDescriptor) {
+  var fn = descriptor.value
+  descriptor.value = function (s: TokenStream) {
     s.save()
 
-    var res = this.exec(s)
+    var res = fn.call(this, s)
 
     if (res == null) {
       s.rollback()
@@ -40,10 +32,18 @@ export abstract class BaseRule {
 
     s.commit()
 
-    return res
+    return res    
   }
+}
 
-  skip(s: Stream): string[] {
+
+export type Result = (string)[] | null
+
+export abstract class BaseRule {
+
+  abstract exec(s: TokenStream): Result;
+
+  skip(s: TokenStream): string[] {
     var res = []
     var skip_rule = s.skip
     while (s.peek() && skip_rule.test(s.peek()!)) {
@@ -62,7 +62,8 @@ export class Rule extends BaseRule {
 
   constructor(public subrules: BaseRule[]) { super() }
 
-  exec(s: Stream): Result {
+  @protectStreamState
+  exec(s: TokenStream): Result {
     var res: Result[] = []
 
     var i = 0
@@ -71,13 +72,13 @@ export class Rule extends BaseRule {
 
     for (var i = 0; i < len; i++) {
       var r = sub[i]
-      var res2 = r.run(s)
+      var res2 = r.exec(s)
       if (res2 == null) return null
       res.push(res2)
       if (i < len - 1) res.push(this.skip(s))
     }
 
-    var a = [] as (string|Token)[]
+    var a = [] as (string)[]
     a = a.concat(...res as any)
     return a
   }
@@ -92,7 +93,7 @@ export function _(...a: RuleDecl[]): Rule {
 
 export class AnyRule extends BaseRule {
 
-  exec(s: Stream): Result {
+  exec(s: TokenStream): Result {
     var next = s.next()
     if (next == null) return null
     return [next]
@@ -112,7 +113,7 @@ export class StringRule extends BaseRule {
     this.matches = matches
   }
 
-  exec(s: Stream): Result {
+  exec(s: TokenStream): Result {
     var next = s.next()
 
     for (var m of this.matches)
@@ -128,7 +129,7 @@ export class ReRule extends BaseRule {
 
   constructor(public re: RegExp) { super() }
 
-  exec(s: Stream): Result {
+  exec(s: TokenStream): Result {
     var next = s.next()
     if (next == null) return null
     return this.re.test(next) ? [next] : null
@@ -142,9 +143,10 @@ export class EitherRule extends BaseRule {
 
   constructor(public subrules: BaseRule[]) { super() }
 
-  exec(s: Stream): Result {
+  @protectStreamState
+  exec(s: TokenStream): Result {
     for (var sub of this.subrules) {
-      var res = sub.run(s)
+      var res = sub.exec(s)
       if (res) return res
     }
     return null
@@ -171,8 +173,9 @@ export class TryRule extends BaseRule {
     else this.rule = rules[0]
   }
 
-  exec(s: Stream): Result {
-    var res: (string|Token)[] = []
+  @protectStreamState
+  exec(s: TokenStream): Result {
+    var res: (string)[] = []
     var next
     var found = false
 
@@ -180,7 +183,7 @@ export class TryRule extends BaseRule {
 
       // first try to play the until rule
       if (this._until) {
-        var res2 = this._until.run(s)
+        var res2 = this._until.exec(s)
         if (res2) {
           res = res.concat(res2)
           return res
@@ -188,7 +191,7 @@ export class TryRule extends BaseRule {
       }
 
       // The we try the rule
-      var res_rule = this.rule.run(s)
+      var res_rule = this.rule.exec(s)
       if (res_rule) {
         res = res.concat(res_rule)
         continue
@@ -214,11 +217,12 @@ export class ZeroOrMoreRule extends BaseRule {
 
   constructor(public rule: BaseRule) { super() }
 
-  exec(s: Stream): Result {
+  @protectStreamState
+  exec(s: TokenStream): Result {
     var res = [] as Result[]
     var res2
 
-    while (res2 = this.rule.run(s)) {
+    while (res2 = this.rule.exec(s)) {
       res.push(res2)
       res.push(this.skip(s))
     }
@@ -233,9 +237,10 @@ export class LookAheadRule extends BaseRule {
 
   constructor(public rule: BaseRule) { super() }
 
-  exec(s: Stream): Result {
+  @protectStreamState
+  exec(s: TokenStream): Result {
     s.save()
-    var res = this.rule.run(s)
+    var res = this.rule.exec(s)
     s.rollback()
 
     if (res != null) return []
@@ -253,8 +258,9 @@ export class OptionalRule extends BaseRule {
 
   constructor(public rule: BaseRule) { super() }
 
-  exec(s: Stream): Result {
-    var res = this.rule.run(s)
+  @protectStreamState
+  exec(s: TokenStream): Result {
+    var res = this.rule.exec(s)
     return res == null ? [] : res
   }
 
@@ -272,43 +278,4 @@ export const Z = ZeroOrMore
 
 export function Try(...r: RuleDecl[]): TryRule {
   return new TryRule(r.map(convertRule))
-}
-
-
-export class Language {
-
-  static languages: Language[] = []
-
-  static get(alias: string) {
-    for (var l of this.languages) {
-      if (l.aliases.indexOf(alias) > -1)
-        return l
-    }
-    return null
-  }
-
-  static create(rule: BaseRule, skip: RegExp, ...res: RegExp[]) {
-    var l = new Language(rule, skip, new Tokenizer(...res))
-    this.languages.push(l)
-    return l
-  }
-
-  aliases: string[] = []
-
-  constructor(public rule: BaseRule, public skip: RegExp, public tokenizer: Tokenizer) { }
-
-  alias(...alias: string[]): this {
-    this.aliases = this.aliases.concat(alias)
-    return this
-  }
-
-  parse(str: string): string {
-    var tokens = this.tokenizer.feed(str)
-    var stream = new Stream(tokens, this.skip)
-    return (this.rule.run(stream)||[]).map(s => typeof s === 'string' ?
-      s.replace(/&/g, '&amp;')
-       .replace(/</g, '&lt;')
-       .replace(/>/g, '&gt;')
-    : s.toString()).join('')
-  }
 }

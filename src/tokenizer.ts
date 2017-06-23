@@ -34,7 +34,7 @@ export class Tokenizer {
 }
 
 
-export class Stream {
+export class TokenStream {
   stack: number[] = []
   position = 0
 
