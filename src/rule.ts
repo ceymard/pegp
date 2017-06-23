@@ -1,33 +1,21 @@
 
-import {TokenStream} from './tokenizer'
-
-export type RuleDecl = string | RegExp | BaseRule | (() => BaseRule)
-
-function convertRule(r: RuleDecl): BaseRule {
-  if (typeof r === 'string')
-    return Str(r)
-  if (r instanceof RegExp)
-    return Re(r)
-  if (typeof r === 'function')
-    return r()
-  return r
-}
-
-function convert(r: RuleDecl[]): BaseRule {
-  return r.length > 1 ? _(...r.map(convertRule)) : convertRule(r[0])
-}
+import {TokenStream, Token} from './tokenizer'
 
 
-export function protectStreamState(target: BaseRule, prop: string, descriptor: PropertyDescriptor) {
+export interface NoMatch { }
+export const NO_MATCH: NoMatch = {}
+
+
+export function protectStreamState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
   var fn = descriptor.value
   descriptor.value = function (s: TokenStream) {
     s.save()
 
     var res = fn.call(this, s)
 
-    if (res == null) {
+    if (res == NO_MATCH) {
       s.rollback()
-      return null
+      return NO_MATCH
     }
 
     s.commit()
@@ -39,32 +27,51 @@ export function protectStreamState(target: BaseRule, prop: string, descriptor: P
 
 export type Result = (string)[] | null
 
-export abstract class BaseRule {
+export abstract class Rule<T> {
 
-  abstract exec(s: TokenStream): Result;
+  abstract exec(s: TokenStream): T | NoMatch;
 
-  skip(s: TokenStream): string[] {
+  skip(s: TokenStream): Token[] {
     var res = []
     var skip_rule = s.skip
-    while (s.peek() && skip_rule.test(s.peek()!)) {
+    while (s.peek() && skip_rule.test(s.peek()!.string)) {
       res.push(s.next()!)
     }
     return res
   }
 
+  transform<U>(fn: (a: T) => U): Rule<U> {
+    return new TransformRule(this, fn) // FIXME
+  }
+
+}
+
+
+export class TransformRule<T, U> extends Rule<U> {
+
+  constructor(public baserule: Rule<T>, public tr: (a: T) => U) {
+    super()
+  }
+
+  exec(s: TokenStream): U | NoMatch {
+    var res = this.baserule.exec(s)
+    if (res !== NO_MATCH) 
+      return this.tr(res as T)
+    return NO_MATCH
+  }
 }
 
 
 /**
  * Match a given list of rules.
  */
-export class Rule extends BaseRule {
+export class TupleRule<T> extends Rule<T> {
 
-  constructor(public subrules: BaseRule[]) { super() }
+  constructor(public subrules: Rule<any>[]) { super() }
 
   @protectStreamState
-  exec(s: TokenStream): Result {
-    var res: Result[] = []
+  exec(s: TokenStream): T | NoMatch {
+    var res: any = []
 
     var i = 0
     var sub = this.subrules
@@ -73,30 +80,35 @@ export class Rule extends BaseRule {
     for (var i = 0; i < len; i++) {
       var r = sub[i]
       var res2 = r.exec(s)
-      if (res2 == null) return null
+      if (res2 == null) return NO_MATCH
       res.push(res2)
       if (i < len - 1) res.push(this.skip(s))
     }
 
-    var a = [] as (string)[]
-    a = a.concat(...res as any)
-    return a
+    return res
   }
 
 }
 
 
-export function _(...a: RuleDecl[]): Rule {
-  return new Rule(a.map(convertRule))
+export function _<A>(a: Rule<A>): TupleRule<[A]>
+export function _<A, B>(a: Rule<A>, b: Rule<B>): TupleRule<[A, B]>
+export function _<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): TupleRule<[A, B, C]>
+export function _<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): TupleRule<[A, B, C, D]>
+export function _<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): TupleRule<[A, B, C, D, E]>
+export function _<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): TupleRule<[A, B, C, D, E, F]>
+export function _<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): TupleRule<[A, B, C, D, E, F, G]>
+export function _(...a: Rule<any>[]): TupleRule<any> {
+  return new TupleRule(a)
 }
 
 
-export class AnyRule extends BaseRule {
+export class AnyRule extends Rule<Token> {
 
-  exec(s: TokenStream): Result {
+  exec(s: TokenStream): Token | NoMatch {
     var next = s.next()
-    if (next == null) return null
-    return [next]
+    if (next == null) return NO_MATCH
+    return next
   }
 
 }
@@ -104,7 +116,7 @@ export class AnyRule extends BaseRule {
 export const Any = new AnyRule()
 
 
-export class StringRule extends BaseRule {
+export class StringRule extends Rule<Token> {
 
   matches: string[] = []
 
@@ -113,48 +125,51 @@ export class StringRule extends BaseRule {
     this.matches = matches
   }
 
-  exec(s: TokenStream): Result {
+  exec(s: TokenStream): Token | NoMatch {
     var next = s.next()
 
-    for (var m of this.matches)
-      if (m === next) return [next]
-    return null
+    if (next)
+      for (var m of this.matches)
+        if (m === next.string) return next
+    return NO_MATCH
   }
 
 }
 
-export function Str(...str: string[]): BaseRule { return new StringRule(...str) }
-
-export class ReRule extends BaseRule {
+export class RegExpRule extends Rule<Token> {
 
   constructor(public re: RegExp) { super() }
 
-  exec(s: TokenStream): Result {
+  exec(s: TokenStream): Token | NoMatch {
     var next = s.next()
-    if (next == null) return null
-    return this.re.test(next) ? [next] : null
+    return next && this.re.test(next.string) ? next : NO_MATCH
   }
 }
 
-export function Re(re: RegExp) { return new ReRule(re) }
 
+export class EitherRule<T> extends Rule<T> {
 
-export class EitherRule extends BaseRule {
-
-  constructor(public subrules: BaseRule[]) { super() }
+  constructor(public subrules: Rule<T>[]) { super() }
 
   @protectStreamState
-  exec(s: TokenStream): Result {
+  exec(s: TokenStream): T | NoMatch {
     for (var sub of this.subrules) {
       var res = sub.exec(s)
-      if (res) return res
+      if (res !== NO_MATCH) return res
     }
-    return null
+    return NO_MATCH
   }
 }
 
-export function Either(...r: RuleDecl[]): BaseRule {
-  return new EitherRule(r.map(convertRule))
+
+export function Either<A, B>(a: Rule<A>, b: Rule<B>): Rule<A | B>
+export function Either<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): Rule<A | B | C>
+export function Either<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): Rule<A | B | C | D>
+export function Either<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): Rule<A | B | C | D | E>
+export function Either<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): Rule<A | B | C | D | E | F>
+export function Either<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): Rule<A | B | C | D | E | F | G>
+export function Either(...r: Rule<any>[]): Rule<any> {
+  return new EitherRule(r)
 }
 
 
@@ -162,12 +177,13 @@ export function Either(...r: RuleDecl[]): BaseRule {
  * This rule will try to apply a subrule until a condition
  * is met (if any)
  */
-export class TryRule extends BaseRule {
+/*
+export class TryRule extends Rule {
 
-  rule: BaseRule
-  _until: BaseRule | null = null
+  rule: Rule
+  _until: Rule | null = null
 
-  constructor(rules: BaseRule[]) {
+  constructor(rules: Rule[]) {
     super()
     if (rules.length > 1) this.rule = Either(...rules)
     else this.rule = rules[0]
@@ -212,70 +228,76 @@ export class TryRule extends BaseRule {
   }
 
 }
+*/
 
-export class ZeroOrMoreRule extends BaseRule {
+export class ZeroOrMoreRule<T> extends Rule<T[]> {
 
-  constructor(public rule: BaseRule) { super() }
+  constructor(public rule: Rule<T>) { super() }
 
   @protectStreamState
-  exec(s: TokenStream): Result {
-    var res = [] as Result[]
-    var res2
+  exec(s: TokenStream): T[] | NoMatch {
+    var res = [] as T[]
+    var res2: T | NoMatch
 
     while (res2 = this.rule.exec(s)) {
-      res.push(res2)
-      res.push(this.skip(s))
+      res.push(res2 as T)
+      this.skip(s)
     }
 
-    return [].concat(...res as any)
+    return ([] as T[]).concat(...res)
   }
 
 }
 
 
-export class LookAheadRule extends BaseRule {
+/**
+ * A rule that rolls back the token stream whatever happens.
+ */
+export class LookAheadRule<T> extends Rule<T> {
 
-  constructor(public rule: BaseRule) { super() }
+  constructor(public rule: Rule<T>) { super() }
 
-  @protectStreamState
-  exec(s: TokenStream): Result {
+  exec(s: TokenStream): T | NoMatch {
     s.save()
     var res = this.rule.exec(s)
     s.rollback()
 
-    if (res != null) return []
-    return null
+    return res
   }
 
 }
 
-export function LookAhead(...r: RuleDecl[]): LookAheadRule {
-  return new LookAheadRule(r.length > 1 ? _(...r) : convertRule(r[0]))
+export function LookAhead<T>(r: Rule<T>): LookAheadRule<T> {
+  return new LookAheadRule(r)
 }
 
 
-export class OptionalRule extends BaseRule {
+export class OptionalRule<T> extends Rule<T | NoMatch> {
 
-  constructor(public rule: BaseRule) { super() }
+  constructor(public rule: Rule<T>) { super() }
 
   @protectStreamState
-  exec(s: TokenStream): Result {
-    var res = this.rule.exec(s)
-    return res == null ? [] : res
+  exec(s: TokenStream): T | NoMatch {
+    return this.rule.exec(s)
   }
 
 }
 
-export function Optional(...r: RuleDecl[]): OptionalRule {
-  return new OptionalRule(convert(r))
+export function Optional<T>(r: Rule<T>): OptionalRule<T> {
+  return new OptionalRule(r)
 }
 
-export function ZeroOrMore(...r: RuleDecl[]): ZeroOrMoreRule {
-  return new ZeroOrMoreRule(_(...r))
+export function ZeroOrMore<T>(r: Rule<T>): ZeroOrMoreRule<T> {
+  return new ZeroOrMoreRule(r)
 }
 
 export const Z = ZeroOrMore
 
-export function Try(...r: RuleDecl[]): TryRule {
-  return new TryRule(r.map(convertRule))
-}
+export function Re(re: RegExp): Rule<Token> { return new RegExpRule(re) }
+
+export function Str(...str: string[]): Rule<Token> { return new StringRule(...str) }
+export const S = Str
+
+// export function Try(...r: RuleDecl[]): TryRule {
+//   return new TryRule(r.map(convertRule))
+// }

@@ -7,7 +7,7 @@
 
 import {
   Any,
-  Either, Try, Re, _, Rule, LookAhead, Optional, Str, Z
+  Either, Try, Re, _, LookAhead, Optional, Str, Z
 } from '../src/rule'
 
 
@@ -303,12 +303,13 @@ const ATTRIBUTE = _(VALID_ATTRIBUTE_NAME, Optional(Either(
   _(ASSIGN, SIMPLE_STRING)
 )))
 
-const OPENING_TAG_START = _('<', DOTTED_NAME, Z(ATTRIBUTE))
+const 
+  OPENING_TAG_START = _('<', DOTTED_NAME, Z(ATTRIBUTE)),
+  OPENING_TAG = _(OPENING_TAG_START, '>'),
+  SELF_CLOSING_TAG = _(OPENING_TAG_START, O('/', '>')),
+  CLOSING_TAG = _(O('<', '/'), DOTTED_NAME, '>'),
+  HTML_ENTITY = _(O('&'), ID, O(';'))
 
-const OPENING_TAG = _(OPENING_TAG_START, '>')
-const SELF_CLOSING_TAG = _(OPENING_TAG_START, O('/', '>'))
-const CLOSING_TAG = _(O('<', '/'), DOTTED_NAME, '>')
-const HTML_ENTITY = _(O('&'), ID, O(';'))
 
 const JSX = Either(
   _(OPENING_TAG, Try(
