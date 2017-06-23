@@ -44,6 +44,10 @@ export abstract class Rule<T> {
     return new TransformRule(this, fn) // FIXME
   }
 
+  tf<U>(fn: (a: T) => U): Rule<U> {
+    return new TransformRule(this, fn) // FIXME
+  }
+
 }
 
 
@@ -116,11 +120,11 @@ export class AnyRule extends Rule<Token> {
 export const Any = new AnyRule()
 
 
-export class StringRule extends Rule<Token> {
+export class MatchRule extends Rule<Token> {
 
-  matches: string[] = []
+  matches: (string|RegExp)[] = []
 
-  constructor(...matches: string[]) {
+  constructor(...matches: (string|RegExp)[]) {
     super()
     this.matches = matches
   }
@@ -130,20 +134,11 @@ export class StringRule extends Rule<Token> {
 
     if (next)
       for (var m of this.matches)
-        if (m === next.string) return next
+        if (typeof m === 'string' && m === next.string
+        || m instanceof RegExp && m.exec(next.string)) return next
     return NO_MATCH
   }
 
-}
-
-export class RegExpRule extends Rule<Token> {
-
-  constructor(public re: RegExp) { super() }
-
-  exec(s: TokenStream): Token | NoMatch {
-    var next = s.next()
-    return next && this.re.test(next.string) ? next : NO_MATCH
-  }
 }
 
 
@@ -293,10 +288,18 @@ export function ZeroOrMore<T>(r: Rule<T>): ZeroOrMoreRule<T> {
 
 export const Z = ZeroOrMore
 
-export function Re(re: RegExp): Rule<Token> { return new RegExpRule(re) }
+export function Match(...str: (string|RegExp)[]): Rule<Token> { return new MatchRule(...str) }
+export const M = Match
 
-export function Str(...str: string[]): Rule<Token> { return new StringRule(...str) }
+export function Str(...str: (string|RegExp)[]): Rule<string> {
+  return new MatchRule(...str).tf(tk => tk.string)
+}
+
 export const S = Str
+
+export function Forward<T>(def: () => Rule<T>): Rule<T> {
+  return def()
+}
 
 // export function Try(...r: RuleDecl[]): TryRule {
 //   return new TryRule(r.map(convertRule))

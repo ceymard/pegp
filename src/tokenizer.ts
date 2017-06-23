@@ -15,6 +15,10 @@ export class Tokenizer {
 
   re: RegExp = /./
 
+  static create(...args: (string|RegExp)[]) {
+    return new Tokenizer(...args)
+  }
+
   constructor(...args: (string|RegExp)[]) {
     var tks = args.map(s => typeof(s) === 'string' ? s : s.source)
     this.re = new RegExp(`${tks.join('|')}`, 'g')
@@ -40,6 +44,10 @@ export class Tokenizer {
       }
     }
     return res
+  }
+
+  stream(str: string, skip: RegExp): TokenStream {
+    return new TokenStream(this.feed(str), skip)
   }
 }
 
