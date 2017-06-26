@@ -1,8 +1,8 @@
 
 
 import {
-  Token as T, _, Either, Forward, Rule, ZeroOrMore
-} from '../src/rule'
+  Token as T, _, Either, Forward, Rule, ZeroOrMore, Language
+} from '../src'
 
 const 
   ALL_SPACE = T(/[\s\t\n\r ]+/),
@@ -30,9 +30,11 @@ const
 
   ADD = 
     _(MULT, ZeroOrMore(_(Either(PLUS, MINUS), MULT)))
-                          .tf(([first, adds]) => 
-                            adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
-                          )
+                          .tf(([first, adds]) => {
+                            return adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
+                          }),
+    
+  CALC = Language(ADD)
     .tokenize(
       NUM,
       PLUS,
@@ -43,7 +45,7 @@ const
       RPAREN
     ).skip(ALL_SPACE)
 
-ADD.parse('  2 +   45 * 2')
+console.log(CALC.parse('  2 * (2 +   1)   + 10'))
 // ADD.exec(
 //   Tokenizer.create(/\w/)
 //   .stream(`

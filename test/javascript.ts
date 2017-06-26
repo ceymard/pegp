@@ -8,7 +8,7 @@
 import {
   Any,
   Either, Try, Re, _, LookAhead, Optional, Str, Z
-} from '../src/rule'
+} from '../src'
 
 
 function K(...args: string[])  {

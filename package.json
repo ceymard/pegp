@@ -2,5 +2,8 @@
   "name": "hues",
   "version": "0.0.2",
   "main": "./build/index.js",
-  "typings": "./build/index.d.ts"
+  "typings": "./build/index.d.ts",
+  "devDependencies": {
+    "@types/node": "^8.0.2"
+  }
 }
