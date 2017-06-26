@@ -5,6 +5,7 @@ import {
 } from '../src/rule'
 
 const 
+  ALL_SPACE = T(/[\s\t\n\r ]+/),
   NUM = T(/[0-9]+(\.[0-9+])?/),
 
   PLUS = T('+'),
@@ -32,7 +33,17 @@ const
                           .tf(([first, adds]) => 
                             adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
                           )
+    .tokenize(
+      NUM,
+      PLUS,
+      MINUS,
+      STAR,
+      SLASH,
+      LPAREN,
+      RPAREN
+    ).skip(ALL_SPACE)
 
+ADD.parse('  2 +   45 * 2')
 // ADD.exec(
 //   Tokenizer.create(/\w/)
 //   .stream(`

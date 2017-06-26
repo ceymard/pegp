@@ -8,9 +8,8 @@ export class Lexeme {
   constructor(
     public text: string, 
     public token: TokenRule,
-    public position: number,
-    public line: number, 
-    public column: number
+    public index: number, // starting position in the original string
+    public position: number // position in the lexeme array
   ) {  }
 
   toString() { return this.text }
@@ -84,7 +83,12 @@ export class Lexer {
    */
   discardNextLexemes() {
     if (this.position < this.lexemes.length) {
+      // destroy the supplementary lexemes that we don't need anymore
       this.lexemes.splice(this.position + 1)
+
+      // reset last index
+      var last = this.lexemes[this.position]
+      this.last_index = last.index + last.text.length
     }
   }
 
@@ -103,23 +107,84 @@ export class Lexer {
   }
 
   /**
-   * Advances the lexer to the next non-skipped token.
+   * Advances the lexer to the next non-skipped token. It may not
+   * update the position if asked
    */
-  advance() {
+  nextLexeme(update_position = true): Lexeme | null {
+    var position = this.position
 
+    // Get the current set of skips
+    const skips = this.skips[this.skips.length - 1]
+
+    // Get the current set of tokens
+    const tokens = this.tokens[this.tokens.length - 1]
+
+    const lexemes = this.lexemes
+
+    while (position < lexemes.length) {
+      for (var s of skips)
+        if (s === lexemes[position].token) {
+          position++
+          continue
+        }
+
+      // If we get here, it means that we're still in the already
+      // parsed lexemes but found one that was not skippable, so
+      // we return it.
+      if (update_position) this.position = position
+      return lexemes[position]
+    }
+
+    // If we get here, it means that we got out of the list we already had
+    // and need to find more lexemes.
+    while (this.last_index < this.string.length) {
+      for (var s of skips) {
+        s.regexp.lastIndex = this.last_index
+        var match = s.regexp.exec(this.string)
+        if (match) {
+          position++
+          var l = new Lexeme(
+            match[0],
+            s,
+            this.last_index,
+            position
+          )
+          this.last_index += match[0].length
+          lexemes.push(l)
+          // push the lexeme
+          continue
+        }
+      }
+
+      for (var t of tokens) {
+        t.regexp.lastIndex = this.last_index
+        match = t.regexp.exec(this.string)
+        if (match) {
+          position++
+          var l = new Lexeme(
+            match[0],
+            t,
+            this.last_index,
+            position
+          )
+          this.last_index += match[0].length
+          lexemes.push(l)
+          if (update_position) this.position = position
+          return lexemes[position]
+        }
+      }
+    }
+
+    if (update_position) this.position = position
+    return null
   }
 
   peek(): Lexeme|null {
-    var res = this.lexemes[this.position]
-    return res == null ? null : res
+    return this.nextLexeme(false)
   }
 
   next(): Lexeme|null {
-    var res = this.lexemes[this.position]
-    if (res == null) return null
-
-    this.position++
-    return res
+    return this.nextLexeme()
   }
 
 }
