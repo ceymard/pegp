@@ -286,7 +286,7 @@ export class TransformRule<T, U> extends Rule<U> {
 /**
  * Match a given list of rules.
  */
-export class TupleRule<T> extends Rule<T> {
+export class SequenceRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<any>[]) { super() }
 
@@ -311,15 +311,15 @@ export class TupleRule<T> extends Rule<T> {
 }
 
 
-export function _<A>(a: Rule<A>): TupleRule<[A]>
-export function _<A, B>(a: Rule<A>, b: Rule<B>): TupleRule<[A, B]>
-export function _<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): TupleRule<[A, B, C]>
-export function _<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): TupleRule<[A, B, C, D]>
-export function _<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): TupleRule<[A, B, C, D, E]>
-export function _<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): TupleRule<[A, B, C, D, E, F]>
-export function _<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): TupleRule<[A, B, C, D, E, F, G]>
-export function _(...a: Rule<any>[]): TupleRule<any> {
-  return new TupleRule(a)
+export function _<A>(a: Rule<A>): SequenceRule<[A]>
+export function _<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
+export function _<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
+export function _<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
+export function _<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
+export function _<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
+export function _<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
+export function _(...a: Rule<any>[]): SequenceRule<any> {
+  return new SequenceRule(a)
 }
 
 
@@ -329,30 +329,6 @@ export class AnyRule extends Rule<Lexeme> {
     var next = l.next()
     if (next == null) return NOMATCH
     return next
-  }
-
-}
-
-export const Any = new AnyRule()
-
-
-export class MatchRule extends Rule<Lexeme> {
-
-  matches: (string|RegExp)[] = []
-
-  constructor(...matches: (string|RegExp)[]) {
-    super()
-    this.matches = matches
-  }
-
-  exec(l: Lexer): Lexeme | NoMatch {
-    var next = l.next()
-
-    if (next)
-      for (var m of this.matches)
-        if (typeof m === 'string' && m === next.text
-        || m instanceof RegExp && m.exec(next.text)) return next
-    return NOMATCH
   }
 
 }
@@ -420,8 +396,19 @@ export class LookAheadRule<T> extends Rule<T> {
 
 }
 
-export function LookAhead<T>(r: Rule<T>): LookAheadRule<T> {
-  return new LookAheadRule(r)
+
+export class NotRule extends Rule<null> {
+
+  constructor(public rule: Rule<any>) { super() }
+
+  exec (l: Lexer): null | NoMatch {
+    l.save()
+    var res = this.rule.exec(l)
+    l.rollback()
+    if (res !== NOMATCH) return NOMATCH
+    return null
+  }
+
 }
 
 
@@ -504,12 +491,6 @@ export function ZeroOrMore<T>(r: Rule<T>): ZeroOrMoreRule<T> {
   return new ZeroOrMoreRule(r)
 }
 
-export function Match(...str: (string|RegExp)[]): Rule<Lexeme> { return new MatchRule(...str) }
-
-export function Str(...str: (string|RegExp)[]): Rule<string> {
-  return new MatchRule(...str).tf(tk => tk.text)
-}
-
 export function Forward<T>(def: () => Rule<T>) {
   return new ForwardRule(def)
 }
@@ -520,3 +501,13 @@ export function Token(def: string | RegExp): TokenRule {
     new RegExp(typeof def === 'string' ? def.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') : def.source, 'gy')
   )
 }
+
+export function LookAhead<T>(r: Rule<T>): LookAheadRule<T> {
+  return new LookAheadRule(r)
+}
+
+export function Not(r: Rule<any>) {
+  return new NotRule(r)
+}
+
+export const Any = new AnyRule()
