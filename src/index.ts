@@ -185,9 +185,6 @@ export class Lexer {
           return lexemes[position]
         }
       }
-
-      // FIXME if I get there this is an error !
-      throw new Error('couldnt lex')
     }
 
     if (update_position) this.position = position

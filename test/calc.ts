@@ -45,10 +45,4 @@ const
       RPAREN
     ).skip(ALL_SPACE)
 
-console.log(CALC.parse('  2 * (2 +   1)   + 10'))
-// ADD.exec(
-//   Tokenizer.create(/\w/)
-//   .stream(`
-//     1 + 2
-//   `, /\s|\n/)
-// )
+console.log(CALC.parse('  2 * (2 +   1)   + 10     '))
