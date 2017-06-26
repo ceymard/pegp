@@ -1,6 +1,102 @@
 
-import {TokenStream, Token} from './tokenizer'
 
+/**
+ * A string holder that keeps track of where it was found in a file.
+ */
+export class Lexeme {
+
+  constructor(
+    public text: string, 
+    public line: number, 
+    public column: number,
+    public token: TokenRule
+  ) { 
+
+  }
+
+  toString() { return this.text }
+
+}
+
+
+export class Lexer {
+
+  re: RegExp = /./
+
+  static create(...args: (string|RegExp)[]) {
+    return new Lexer(...args)
+  }
+
+  constructor(...args: (string|RegExp)[]) {
+    var tks = args.map(s => typeof(s) === 'string' ? s : s.source)
+    this.re = new RegExp(`${tks.join('|')}`, 'g')
+  }
+
+  feed(str: string): Lexeme[] {
+    var re = this.re
+    var exec
+
+    var res = [] as Lexeme[]
+    var line = 0
+    var col = 1
+    while (exec = re.exec(str)) {
+      var tk = exec[0], len = tk.length
+      // FIXME check that we didn't skip anything in between
+      res.push(new Lexeme(tk, line, col))
+
+      for (var i = 0; i < len; i++) {
+        if (tk[i] === '\n') {
+          line++;
+          col = 1;
+        } else col++
+      }
+    }
+    return res
+  }
+
+  stream(str: string, skip: RegExp): TokenStream {
+    return new TokenStream(this.feed(str), skip)
+  }
+}
+
+
+export class TokenStream {
+  stack: number[] = []
+  position = 0
+
+  constructor(public arr: Lexeme[], public skip: RegExp) { }
+
+  save() {
+    this.stack.push(this.position)
+  }
+
+  rollback() {
+    if (this.stack.length === 0) return
+    this.position = this.stack.pop()!
+  }
+
+  commit() {
+    if (this.stack.length === 0) return
+    this.stack.pop()!
+  }
+
+  peek(): Lexeme|null {
+    var res = this.arr[this.position]
+    return res == null ? null : res
+  }
+
+  next(): Lexeme|null {
+    var res = this.arr[this.position]
+    if (res == null) return null
+
+    this.position++
+    return res
+  }
+
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
 
 export interface NoMatch { }
 export const NO_MATCH: NoMatch = {}
@@ -13,7 +109,7 @@ export function protectStreamState(target: Rule<any>, prop: string, descriptor: 
 
     var res = fn.call(this, s)
 
-    if (res == NO_MATCH) {
+    if (res === NO_MATCH) {
       s.rollback()
       return NO_MATCH
     }
@@ -31,21 +127,44 @@ export abstract class Rule<T> {
 
   abstract exec(s: TokenStream): T | NoMatch;
 
-  skip(s: TokenStream): Token[] {
+  skip(s: TokenStream): Lexeme[] {
     var res = []
     var skip_rule = s.skip
-    while (s.peek() && skip_rule.test(s.peek()!.string)) {
+    while (s.peek() && skip_rule.test(s.peek()!.text)) {
       res.push(s.next()!)
     }
     return res
   }
 
-  transform<U>(fn: (a: T) => U): Rule<U> {
+  transform<U>(fn: (a: T) => (U | NoMatch)): Rule<U> {
     return new TransformRule(this, fn) // FIXME
   }
 
-  tf<U>(fn: (a: T) => U): Rule<U> {
+  tf<U>(fn: (a: T) => (U | NoMatch)): Rule<U> {
     return new TransformRule(this, fn) // FIXME
+  }
+
+}
+
+
+/**
+ * Matches a given token.
+ */
+export class TokenRule extends Rule<Lexeme> {
+
+  constructor(public regexp: RegExp) {
+    super()
+  }
+
+  exec(s: TokenStream): Lexeme | NoMatch {
+    var next = s.peek()
+    if (next === null || next.token !== this) return NO_MATCH
+
+    return s.next()!
+  }
+
+  text() {
+    return this.tf(tk => tk.text)
   }
 
 }
@@ -84,7 +203,7 @@ export class TupleRule<T> extends Rule<T> {
     for (var i = 0; i < len; i++) {
       var r = sub[i]
       var res2 = r.exec(s)
-      if (res2 == null) return NO_MATCH
+      if (res2 === NO_MATCH) return NO_MATCH
       res.push(res2)
       if (i < len - 1) res.push(this.skip(s))
     }
@@ -107,9 +226,9 @@ export function _(...a: Rule<any>[]): TupleRule<any> {
 }
 
 
-export class AnyRule extends Rule<Token> {
+export class AnyRule extends Rule<Lexeme> {
 
-  exec(s: TokenStream): Token | NoMatch {
+  exec(s: TokenStream): Lexeme | NoMatch {
     var next = s.next()
     if (next == null) return NO_MATCH
     return next
@@ -120,7 +239,7 @@ export class AnyRule extends Rule<Token> {
 export const Any = new AnyRule()
 
 
-export class MatchRule extends Rule<Token> {
+export class MatchRule extends Rule<Lexeme> {
 
   matches: (string|RegExp)[] = []
 
@@ -129,13 +248,13 @@ export class MatchRule extends Rule<Token> {
     this.matches = matches
   }
 
-  exec(s: TokenStream): Token | NoMatch {
+  exec(s: TokenStream): Lexeme | NoMatch {
     var next = s.next()
 
     if (next)
       for (var m of this.matches)
-        if (typeof m === 'string' && m === next.string
-        || m instanceof RegExp && m.exec(next.string)) return next
+        if (typeof m === 'string' && m === next.text
+        || m instanceof RegExp && m.exec(next.text)) return next
     return NO_MATCH
   }
 
@@ -286,21 +405,19 @@ export function ZeroOrMore<T>(r: Rule<T>): ZeroOrMoreRule<T> {
   return new ZeroOrMoreRule(r)
 }
 
-export const Z = ZeroOrMore
-
-export function Match(...str: (string|RegExp)[]): Rule<Token> { return new MatchRule(...str) }
-export const M = Match
+export function Match(...str: (string|RegExp)[]): Rule<Lexeme> { return new MatchRule(...str) }
 
 export function Str(...str: (string|RegExp)[]): Rule<string> {
-  return new MatchRule(...str).tf(tk => tk.string)
+  return new MatchRule(...str).tf(tk => tk.text)
 }
-
-export const S = Str
 
 export function Forward<T>(def: () => Rule<T>): Rule<T> {
   return def()
 }
 
-// export function Try(...r: RuleDecl[]): TryRule {
-//   return new TryRule(r.map(convertRule))
-// }
+
+export function Token(def: string | RegExp): TokenRule {
+  return new TokenRule(
+    new RegExp(typeof def === 'string' ? def : def.source, 'gy')
+  )
+}
