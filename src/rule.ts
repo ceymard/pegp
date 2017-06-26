@@ -7,12 +7,11 @@ export class Lexeme {
 
   constructor(
     public text: string, 
+    public token: TokenRule,
+    public position: number,
     public line: number, 
-    public column: number,
-    public token: TokenRule
-  ) { 
-
-  }
+    public column: number
+  ) {  }
 
   toString() { return this.text }
 
@@ -21,50 +20,73 @@ export class Lexeme {
 
 export class Lexer {
 
-  re: RegExp = /./
+  /**
+   * The tokens that will be used by the lexer to slice
+   * the input. They can change during lexing when a rule
+   * calls another rule that defines different lexemes.
+   * 
+   * The last element is the current token list.
+   */
+  protected tokens: TokenRule[][] = []
 
-  static create(...args: (string|RegExp)[]) {
-    return new Lexer(...args)
-  }
+  /**
+   * Similar to the token rule are the skip rules, used to
+   * ignore some tokens.
+   */
+  protected skips: TokenRule[][] = []
 
-  constructor(...args: (string|RegExp)[]) {
-    var tks = args.map(s => typeof(s) === 'string' ? s : s.source)
-    this.re = new RegExp(`${tks.join('|')}`, 'g')
-  }
+  /**
+   * All the lexemes that have been found thus far.
+   */
+  lexemes: Lexeme[] = []
 
-  feed(str: string): Lexeme[] {
-    var re = this.re
-    var exec
-
-    var res = [] as Lexeme[]
-    var line = 0
-    var col = 1
-    while (exec = re.exec(str)) {
-      var tk = exec[0], len = tk.length
-      // FIXME check that we didn't skip anything in between
-      res.push(new Lexeme(tk, line, col))
-
-      for (var i = 0; i < len; i++) {
-        if (tk[i] === '\n') {
-          line++;
-          col = 1;
-        } else col++
-      }
-    }
-    return res
-  }
-
-  stream(str: string, skip: RegExp): TokenStream {
-    return new TokenStream(this.feed(str), skip)
-  }
-}
-
-
-export class TokenStream {
   stack: number[] = []
   position = 0
+  last_index = 0
+  string = ''
 
-  constructor(public arr: Lexeme[], public skip: RegExp) { }
+  /**
+   * Sets the text this lexer will operate on and
+   * resets its internal state.
+   */
+  feed(str: string): this {
+    this.string = str
+    this.position = 0
+    this.last_index = 0
+    this.stack = []
+
+    return this
+  }
+
+  pushTokens(tokens: TokenRule[]) {
+    this.tokens.push(tokens)
+    this.discardNextLexemes()
+  }
+
+  pushSkip(tokens: TokenRule[]) {
+    this.skips.push(tokens)
+    this.discardNextLexemes()
+  }
+
+  popTokens() {
+    this.tokens.pop()
+    this.discardNextLexemes()
+  }
+
+  popSkip() {
+    this.skips.pop()
+    this.discardNextLexemes()
+  }
+
+  /**
+   * To be called whenever we push or pop tokens or skip rules, as the currently
+   * parsed lexemes could be different.
+   */
+  discardNextLexemes() {
+    if (this.position < this.lexemes.length) {
+      this.lexemes.splice(this.position + 1)
+    }
+  }
 
   save() {
     this.stack.push(this.position)
@@ -80,13 +102,20 @@ export class TokenStream {
     this.stack.pop()!
   }
 
+  /**
+   * Advances the lexer to the next non-skipped token.
+   */
+  advance() {
+
+  }
+
   peek(): Lexeme|null {
-    var res = this.arr[this.position]
+    var res = this.lexemes[this.position]
     return res == null ? null : res
   }
 
   next(): Lexeme|null {
-    var res = this.arr[this.position]
+    var res = this.lexemes[this.position]
     if (res == null) return null
 
     this.position++
@@ -102,19 +131,26 @@ export interface NoMatch { }
 export const NO_MATCH: NoMatch = {}
 
 
-export function protectStreamState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
+export function protectLexerState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
   var fn = descriptor.value
-  descriptor.value = function (s: TokenStream) {
+  descriptor.value = function (s: Lexer) {
     s.save()
+
+    if (target._tokens)
+      s.pushTokens(target._tokens)
+    if (target._skips)
+      s.pushSkip(target._skips)
 
     var res = fn.call(this, s)
 
     if (res === NO_MATCH) {
       s.rollback()
-      return NO_MATCH
+    } else {
+      s.commit()
     }
 
-    s.commit()
+    if (target._tokens) s.popTokens()
+    if (target._skips) s.popSkip()
 
     return res    
   }
@@ -125,15 +161,32 @@ export type Result = (string)[] | null
 
 export abstract class Rule<T> {
 
-  abstract exec(s: TokenStream): T | NoMatch;
+  abstract exec(s: Lexer): T | NoMatch;
 
-  skip(s: TokenStream): Lexeme[] {
-    var res = []
-    var skip_rule = s.skip
-    while (s.peek() && skip_rule.test(s.peek()!.text)) {
-      res.push(s.next()!)
-    }
-    return res
+  _tokens: TokenRule[] | null = null
+  _skips: TokenRule[] | null = null
+
+  tokenize(...tokens: TokenRule[]) {
+    this._tokens = tokens
+    return this
+  }
+
+  skip(...tokens: TokenRule[]) {
+    this._skips = tokens
+    return this
+  }
+
+  /**
+   * Parse an input string.
+   * 
+   * Only works on rules that define a token list and an
+   * optional skip rule.
+   */
+  parse(str: string) {
+    const lexer = new Lexer()
+    if (!this._tokens) throw new Error(`A rule must define tokens to start parsing`)
+    lexer.feed(str)
+    return this.exec(lexer)
   }
 
   transform<U>(fn: (a: T) => (U | NoMatch)): Rule<U> {
@@ -156,7 +209,7 @@ export class TokenRule extends Rule<Lexeme> {
     super()
   }
 
-  exec(s: TokenStream): Lexeme | NoMatch {
+  exec(s: Lexer): Lexeme | NoMatch {
     var next = s.peek()
     if (next === null || next.token !== this) return NO_MATCH
 
@@ -176,7 +229,7 @@ export class TransformRule<T, U> extends Rule<U> {
     super()
   }
 
-  exec(s: TokenStream): U | NoMatch {
+  exec(s: Lexer): U | NoMatch {
     var res = this.baserule.exec(s)
     if (res !== NO_MATCH) 
       return this.tr(res as T)
@@ -192,8 +245,8 @@ export class TupleRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<any>[]) { super() }
 
-  @protectStreamState
-  exec(s: TokenStream): T | NoMatch {
+  @protectLexerState
+  exec(s: Lexer): T | NoMatch {
     var res: any = []
 
     var i = 0
@@ -205,7 +258,6 @@ export class TupleRule<T> extends Rule<T> {
       var res2 = r.exec(s)
       if (res2 === NO_MATCH) return NO_MATCH
       res.push(res2)
-      if (i < len - 1) res.push(this.skip(s))
     }
 
     return res
@@ -228,7 +280,7 @@ export function _(...a: Rule<any>[]): TupleRule<any> {
 
 export class AnyRule extends Rule<Lexeme> {
 
-  exec(s: TokenStream): Lexeme | NoMatch {
+  exec(s: Lexer): Lexeme | NoMatch {
     var next = s.next()
     if (next == null) return NO_MATCH
     return next
@@ -248,7 +300,7 @@ export class MatchRule extends Rule<Lexeme> {
     this.matches = matches
   }
 
-  exec(s: TokenStream): Lexeme | NoMatch {
+  exec(s: Lexer): Lexeme | NoMatch {
     var next = s.next()
 
     if (next)
@@ -265,8 +317,8 @@ export class EitherRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<T>[]) { super() }
 
-  @protectStreamState
-  exec(s: TokenStream): T | NoMatch {
+  @protectLexerState
+  exec(s: Lexer): T | NoMatch {
     for (var sub of this.subrules) {
       var res = sub.exec(s)
       if (res !== NO_MATCH) return res
@@ -348,14 +400,13 @@ export class ZeroOrMoreRule<T> extends Rule<T[]> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  @protectStreamState
-  exec(s: TokenStream): T[] | NoMatch {
+  @protectLexerState
+  exec(s: Lexer): T[] | NoMatch {
     var res = [] as T[]
     var res2: T | NoMatch
 
     while (res2 = this.rule.exec(s)) {
       res.push(res2 as T)
-      this.skip(s)
     }
 
     return ([] as T[]).concat(...res)
@@ -371,7 +422,7 @@ export class LookAheadRule<T> extends Rule<T> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  exec(s: TokenStream): T | NoMatch {
+  exec(s: Lexer): T | NoMatch {
     s.save()
     var res = this.rule.exec(s)
     s.rollback()
@@ -390,8 +441,8 @@ export class OptionalRule<T> extends Rule<T | NoMatch> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  @protectStreamState
-  exec(s: TokenStream): T | NoMatch {
+  @protectLexerState
+  exec(s: Lexer): T | NoMatch {
     return this.rule.exec(s)
   }
 
