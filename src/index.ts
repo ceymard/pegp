@@ -209,7 +209,7 @@ export class Lexer {
 //////////////////////////////////////////////////////////////////////////////
 
 export interface NoMatch { }
-export const NO_MATCH: NoMatch = {}
+export const NOMATCH: NoMatch = {}
 
 
 export function protectLexerState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
@@ -219,7 +219,7 @@ export function protectLexerState(target: Rule<any>, prop: string, descriptor: P
 
     var res = fn.call(this, l)
 
-    if (res === NO_MATCH) {
+    if (res === NOMATCH) {
       l.rollback()
     } else {
       l.commit()
@@ -258,7 +258,7 @@ export class TokenRule extends Rule<Lexeme> {
 
   exec(l: Lexer): Lexeme | NoMatch {
     var next = l.peek()
-    if (next === null || next.token !== this) return NO_MATCH
+    if (next === null || next.token !== this) return NOMATCH
 
     return l.next()!
   }
@@ -279,9 +279,9 @@ export class TransformRule<T, U> extends Rule<U> {
   @protectLexerState
   exec(l: Lexer): U | NoMatch {
     var res = this.baserule.exec(l)
-    if (res !== NO_MATCH) 
+    if (res !== NOMATCH) 
       return this.tr(res as T)
-    return NO_MATCH
+    return NOMATCH
   }
 }
 
@@ -304,7 +304,7 @@ export class TupleRule<T> extends Rule<T> {
     for (var i = 0; i < len; i++) {
       var r = sub[i]
       var res2 = r.exec(l)
-      if (res2 === NO_MATCH) return NO_MATCH
+      if (res2 === NOMATCH) return NOMATCH
       res.push(res2)
     }
 
@@ -330,7 +330,7 @@ export class AnyRule extends Rule<Lexeme> {
 
   exec(l: Lexer): Lexeme | NoMatch {
     var next = l.next()
-    if (next == null) return NO_MATCH
+    if (next == null) return NOMATCH
     return next
   }
 
@@ -355,7 +355,7 @@ export class MatchRule extends Rule<Lexeme> {
       for (var m of this.matches)
         if (typeof m === 'string' && m === next.text
         || m instanceof RegExp && m.exec(next.text)) return next
-    return NO_MATCH
+    return NOMATCH
   }
 
 }
@@ -369,9 +369,9 @@ export class EitherRule<T> extends Rule<T> {
   exec(s: Lexer): T | NoMatch {
     for (var sub of this.subrules) {
       var res = sub.exec(s)
-      if (res !== NO_MATCH) return res
+      if (res !== NOMATCH) return res
     }
-    return NO_MATCH
+    return NOMATCH
   }
 }
 
@@ -397,7 +397,7 @@ export class ZeroOrMoreRule<T> extends Rule<T[]> {
     var res2: T | NoMatch
 
     while (res2 = this.rule.exec(l)) {
-      if (res2 === NO_MATCH) break
+      if (res2 === NOMATCH) break
       res.push(res2 as T)
     }
 
