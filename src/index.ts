@@ -6,7 +6,7 @@
 export class Lexeme {
 
   constructor(
-    public text: string, 
+    public text: string,
     public token: TokenRule,
     public index: number, // starting position in the original string
     public position: number // position in the lexeme array
@@ -23,7 +23,7 @@ export class Lexer {
    * The tokens that will be used by the lexer to slice
    * the input. They can change during lexing when a rule
    * calls another rule that defines different lexemes.
-   * 
+   *
    * The last element is the current token list.
    */
   protected tokens: TokenRule[][] = []
@@ -128,7 +128,7 @@ export class Lexer {
     while (position < lexemes.length - 1) {
       position++
       var skip = false
-      
+
       for (var s of skips) {
         if (s === lexemes[position].token) {
           skip = true
@@ -149,7 +149,7 @@ export class Lexer {
     // If we get here, it means that we got out of the list we already had
     // and need to find more lexemes.
     while (this.last_index < this.string.length) {
-      
+
       for (var s of skips) {
         s.regexp.lastIndex = this.last_index
         var match = s.regexp.exec(this.string)
@@ -222,7 +222,7 @@ export function protectLexerState(target: Rule<any>, prop: string, descriptor: P
       l.commit()
     }
 
-    return res    
+    return res
   }
 }
 
@@ -261,7 +261,18 @@ export class TokenRule extends Rule<Lexeme> {
   }
 
   text() {
-    return this.tf(tk => tk.text)
+    return this.tf(lm => lm.text)
+  }
+
+  as(...matches: (string|RegExp)[]) {
+    return this.tf<Lexeme>(lm => {
+      for (var m of matches) {
+        if (typeof m === 'string' && m === lm.text
+        || m instanceof RegExp && m.exec(lm.text))
+          return lm
+      }
+      return NOMATCH
+    })
   }
 
 }
@@ -276,7 +287,7 @@ export class TransformRule<T, U> extends Rule<U> {
   @protectLexerState
   exec(l: Lexer): U | NoMatch {
     var res = this.baserule.exec(l)
-    if (res !== NOMATCH) 
+    if (res !== NOMATCH)
       return this.tr(res as T)
     return NOMATCH
   }
@@ -453,7 +464,7 @@ export class LanguageRule<T> extends Rule<T> {
 
   /**
    * Parse an input string.
-   * 
+   *
    * Only works on rules that define a token list and an
    * optional skip rule.
    */
@@ -468,7 +479,7 @@ export class LanguageRule<T> extends Rule<T> {
   exec(l: Lexer): T | NoMatch {
     l.pushTokens(this._tokens!)
     if (this._skips) l.pushSkip(this._skips)
-    
+
     var res = this.rule.exec(l)
 
     l.popTokens()
@@ -478,6 +489,10 @@ export class LanguageRule<T> extends Rule<T> {
 
 }
 
+export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
+  return _(r, ZeroOrMore(_(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
+    .tf(([start, rest]) => [start].concat(rest))
+}
 
 export function Language<T>(r: Rule<T>): LanguageRule<T> {
   return new LanguageRule(r)

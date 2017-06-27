@@ -1,5 +1,5 @@
 {
-  "name": "hues",
+  "name": "pegp",
   "version": "0.0.2",
   "main": "./build/index.js",
   "typings": "./build/index.d.ts",
