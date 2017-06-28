@@ -1,19 +1,21 @@
 
 
 import {
-  Token as T, _, Either, Forward, Rule, ZeroOrMore, Language
+  _, Either, Forward, Rule, ZeroOrMore, Language, TokenList
 } from '../src'
 
-const 
-  ALL_SPACE = T(/[\s\t\n\r ]+/),
-  NUM = T(/[0-9]+(\.[0-9+])?/),
+const t = new TokenList()
+t.skip(/[\s\t\n\r ]+/)
 
-  PLUS = T('+'),
-  MINUS = T('-'),
-  STAR = T('*'),
-  SLASH = T('/'),
-  LPAREN = T('('),
-  RPAREN = T(')'),
+const
+  NUM = t.add(/[0-9]+(\.[0-9+])?/),
+
+  PLUS = t.add('+'),
+  MINUS = t.add('-'),
+  STAR = t.add('*'),
+  SLASH = t.add('/'),
+  LPAREN = t.add('('),
+  RPAREN = t.add(')'),
 
   FORWARD_ADD: Rule<number> = Forward(() => ADD),
 
@@ -22,27 +24,18 @@ const
     NUM.tf(tk => parseFloat(tk.text))
   ),
 
-  MULT = 
+  MULT =
     _(PAREN, ZeroOrMore(_(Either(STAR, SLASH), PAREN)))
-                          .tf(([first, mults]) => 
+                          .tf(([first, mults]) =>
                             mults.reduce((lhs, [op, rhs]) => op.text === '*' ? lhs * rhs : lhs / rhs, first)
                           ),
 
-  ADD = 
+  ADD =
     _(MULT, ZeroOrMore(_(Either(PLUS, MINUS), MULT)))
                           .tf(([first, adds]) => {
                             return adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
                           }),
-    
-  CALC = Language(ADD)
-    .tokenize(
-      NUM,
-      PLUS,
-      MINUS,
-      STAR,
-      SLASH,
-      LPAREN,
-      RPAREN
-    ).skip(ALL_SPACE)
 
-console.log(CALC.parse('  2 * (2 +   1)   + 10     '))
+  CALC = Language(ADD, t)
+
+console.log(CALC.parse('  2 * (2 +   1)   + 10 / 2    '))
