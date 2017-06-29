@@ -1,41 +1,40 @@
 
 
 import {
-  _, Either, Forward, Rule, ZeroOrMore, Language, TokenList
+  Sequence, Either, Forward, Rule, ZeroOrMore, Language, TokenList
 } from '../src'
 
 const t = new TokenList()
 t.skip(/[\s\t\n\r ]+/)
 
 const
-  NUM = t.add(/[0-9]+(\.[0-9+])?/),
+  num = t.add(/[0-9]+(\.[0-9+])?/),
 
-  PLUS = t.add('+'),
-  MINUS = t.add('-'),
-  STAR = t.add('*'),
-  SLASH = t.add('/'),
-  LPAREN = t.add('('),
-  RPAREN = t.add(')'),
+  plus = t.add('+'),
+  minus = t.add('-'),
+  star = t.add('*'),
+  slash = t.add('/'),
+  lparen = t.add('('),
+  rparen = t.add(')'),
 
-  FORWARD_ADD: Rule<number> = Forward(() => ADD),
-
-  PAREN = Either(
-    _(LPAREN, FORWARD_ADD, RPAREN).tf(([lp, add, rp]) => add),
-    NUM.tf(tk => parseFloat(tk.text))
+  paren = Either(
+    Sequence(lparen, Forward(() => add), rparen).tf(([lp, add, rp]) => add),
+    num.tf(tk => parseFloat(tk.text))
   ),
 
-  MULT =
-    _(PAREN, ZeroOrMore(_(Either(STAR, SLASH), PAREN)))
+  mult =
+    Sequence(paren, ZeroOrMore(Sequence(Either(star, slash), paren)))
                           .tf(([first, mults]) =>
                             mults.reduce((lhs, [op, rhs]) => op.text === '*' ? lhs * rhs : lhs / rhs, first)
                           ),
 
-  ADD =
-    _(MULT, ZeroOrMore(_(Either(PLUS, MINUS), MULT)))
+  add: Rule<number> =
+    Sequence(mult, ZeroOrMore(Sequence(Either(plus, minus), mult)))
                           .tf(([first, adds]) => {
                             return adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
                           }),
 
-  CALC = Language(ADD, t)
+  calc = Language(add, t)
 
-console.log(CALC.parse('  2 * (2 +   1)   + 10 / 2    '))
+console.log(calc.parse('  2 * (2 +   1)   + 10 / 2    '))
+console.log(calc.parse('   !  '))

@@ -285,14 +285,14 @@ export class SequenceRule<T> extends Rule<T> {
 }
 
 
-export function _<A>(a: Rule<A>): SequenceRule<[A]>
-export function _<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
-export function _<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
-export function _<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
-export function _<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
-export function _<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
-export function _<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
-export function _(...a: Rule<any>[]): SequenceRule<any> {
+export function Sequence<A>(a: Rule<A>): SequenceRule<[A]>
+export function Sequence<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
+export function Sequence<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
+export function Sequence<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
+export function Sequence<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
+export function Sequence<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
+export function Sequence<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
+export function Sequence(...a: Rule<any>[]): SequenceRule<any> {
   return new SequenceRule(a)
 }
 
@@ -450,8 +450,8 @@ export class TokenList {
     return tk
   }
 
-  add(def: string | RegExp): TokenRule {
-    var tk = Token(def)
+  add(def: string | RegExp | TokenRule): TokenRule {
+    var tk = def instanceof TokenRule ? def : Token(def)
     this.tokens.push(tk)
     return tk
   }
@@ -459,7 +459,7 @@ export class TokenList {
 
 
 export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
-  return _(r, ZeroOrMore(_(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
+  return Sequence(r, ZeroOrMore(Sequence(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
     .tf(([start, rest]) => [start].concat(rest))
 }
 
