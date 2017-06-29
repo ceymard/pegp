@@ -106,15 +106,14 @@ export class Lexer {
 
     const lexemes = this.lexemes
 
+    // First, examine the lexemes we already lexed but that were not
+    // consumed by a failed rule match.
     while (position < lexemes.length - 1) {
       position++
 
       if (skip && lexemes[position].token.is_skip)
         continue
 
-      // If we get here, it means that we're still in the already
-      // parsed lexemes but found one that was not skippable, so
-      // we return it.
       if (update_position) this.position = position
       return lexemes[position]
     }
@@ -141,6 +140,11 @@ export class Lexer {
           return lexemes[position]
         }
       }
+
+      // Getting here is an error, as it means that the last_index is
+      // inferior to the string.length and yet we found no token !
+      if (this.last_index < this.string.length)
+        throw new Error(`Illegal input '${this.string.slice(this.last_index, 20)}'...`)
     }
 
     if (update_position) this.position = position
@@ -187,7 +191,14 @@ export type Result = (string)[] | null
 
 export abstract class Rule<T> {
 
+  _name: string
+
   abstract exec(l: Lexer): T | NoMatch;
+
+  name(name: string): this {
+    this._name = name
+    return this
+  }
 
   transform<U>(fn: (a: T) => (U | NoMatch)): Rule<U> {
     return new TransformRule(this, fn) // FIXME
@@ -267,7 +278,6 @@ export class SequenceRule<T> extends Rule<T> {
   @protectLexerState
   exec(l: Lexer): T | NoMatch {
     var res: any = []
-
     var i = 0
     var sub = this.subrules
     var len = sub.length
@@ -285,14 +295,17 @@ export class SequenceRule<T> extends Rule<T> {
 }
 
 
-export function Sequence<A>(a: Rule<A>): SequenceRule<[A]>
-export function Sequence<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
-export function Sequence<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
-export function Sequence<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
-export function Sequence<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
-export function Sequence<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
-export function Sequence<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
-export function Sequence(...a: Rule<any>[]): SequenceRule<any> {
+export function SequenceOf<A>(a: Rule<A>): SequenceRule<[A]>
+export function SequenceOf<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
+export function SequenceOf<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
+export function SequenceOf<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
+export function SequenceOf<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
+export function SequenceOf<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
+export function SequenceOf<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
+export function SequenceOf<A, B, C, D, E, F, G, H>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>): SequenceRule<[A, B, C, D, E, F, G, H]>
+export function SequenceOf<A, B, C, D, E, F, G, H, I>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>, I: Rule<I>): SequenceRule<[A, B, C, D, E, F, G, H, I]>
+export function SequenceOf<A, B, C, D, E, F, G, H, I, J>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>, I: Rule<I>, j: Rule<J>): SequenceRule<[A, B, C, D, E, F, G, H, I, J]>
+export function SequenceOf(...a: Rule<any>[]): SequenceRule<any> {
   return new SequenceRule(a)
 }
 
@@ -419,23 +432,33 @@ export class LanguageRule<T> extends Rule<T> {
 
   /**
    * Parse an input string.
-   *
-   * Only works on rules that define a token list and an
-   * optional skip rule.
    */
   parse(str: string) {
     const lexer = new Lexer()
     lexer.feed(str)
-    return this.exec(lexer)
+    lexer.pushTokens(this.tokens)
+    var res = this.exec(lexer, true)
+    var leftover = lexer.peek()
+
+    if (leftover != null) {
+      throw new Error(`Unexpected input ${leftover.text}`)
+    }
+    return res
   }
 
+  /**
+   * @param l The lexer this language will operate on
+   * @param define_tokens if this language was the one that
+   *          called parse. If not, this rule will push its
+   *          own tokens onto the lexer.
+   */
   @protectLexerState
-  exec(l: Lexer): T | NoMatch {
-    l.pushTokens(this.tokens!)
+  exec(l: Lexer, is_toplevel = true): T | NoMatch {
+    if (!is_toplevel) l.pushTokens(this.tokens!)
 
     var res = this.rule.exec(l)
 
-    l.popTokens()
+    if (!is_toplevel) l.popTokens()
     return res
   }
 
@@ -459,7 +482,7 @@ export class TokenList {
 
 
 export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
-  return Sequence(r, ZeroOrMore(Sequence(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
+  return SequenceOf(r, ZeroOrMore(SequenceOf(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
     .tf(([start, rest]) => [start].concat(rest))
 }
 
