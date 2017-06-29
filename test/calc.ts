@@ -24,13 +24,13 @@ const
   mult =
     SequenceOf(paren, ZeroOrMore(SequenceOf(Either(t_star, t_slash), paren)))
                           .tf(([first, mults]) =>
-                            mults.reduce((lhs, [op, rhs]) => op.text === '*' ? lhs * rhs : lhs / rhs, first)
+                            mults.reduce((lhs, [op, rhs]) => op.is('*') ? lhs * rhs : lhs / rhs, first)
                           ),
 
   add: Rule<number> =
     SequenceOf(mult, ZeroOrMore(SequenceOf(Either(t_plus, t_minus), mult)))
                           .tf(([first, adds]) => {
-                            return adds.reduce((acc, [op, rhs]) => op.text === '+' ? acc + rhs : acc - rhs, first)
+                            return adds.reduce((acc, [op, rhs]) => op.is('+') ? acc + rhs : acc - rhs, first)
                           }),
 
   calc = Language(add, t)

@@ -9,10 +9,18 @@ export class Lexeme {
     public text: string,
     public token: TokenRule,
     public index: number, // starting position in the original string
-    public position: number // position in the lexeme array
+    public line: number // position in the lexeme array
   ) {  }
 
   toString() { return this.text }
+
+  is(str: string) {
+    return this.text === str
+  }
+
+  matches(reg: RegExp) {
+    return reg.exec(this.text)
+  }
 
 }
 
@@ -126,12 +134,17 @@ export class Lexer {
         t.regexp.lastIndex = this.last_index
         var match = t.regexp.exec(this.string)
         if (match) {
+          var prev_lexeme = this.lexemes[position]
+          var lines = 0
+          for (var i = 0; i < match[0].length; i++) {
+            if (match[0][i] === '\n') lines++
+          }
           position++
           var l = new Lexeme(
             match[0],
             t,
             this.last_index,
-            position
+            prev_lexeme ? prev_lexeme.line + lines : 1 + lines
           )
           this.last_index += match[0].length
           lexemes.push(l)
@@ -239,11 +252,11 @@ export class TokenRule extends Rule<Lexeme> {
   }
 
   as(...matches: (string|RegExp)[]) {
-    return this.tf<Lexeme>(lm => {
+    return this.tf<Lexeme>(lxm => {
       for (var m of matches) {
-        if (typeof m === 'string' && m === lm.text
-        || m instanceof RegExp && m.exec(lm.text))
-          return lm
+        if (typeof m === 'string' && lxm.is(m)
+        || m instanceof RegExp && lxm.matches(m))
+          return lxm
       }
       return NOMATCH
     })
@@ -441,7 +454,7 @@ export class LanguageRule<T> extends Rule<T> {
     var leftover = lexer.peek()
 
     if (leftover != null) {
-      throw new Error(`Unexpected input ${leftover.text}`)
+      throw new Error(`${leftover.line}: unexpected '${leftover.text}'`)
     }
     return res
   }
