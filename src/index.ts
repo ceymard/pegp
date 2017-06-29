@@ -9,7 +9,7 @@ export class Lexeme {
     public text: string,
     public token: TokenRule,
     public index: number, // starting position in the original string
-    public line: number // position in the lexeme array
+    public line: number
   ) {  }
 
   toString() { return this.text }
@@ -25,7 +25,11 @@ export class Lexeme {
 }
 
 
-export class Lexer {
+/**
+ * The Input class is the one responsible for breaking down the
+ * input string into usable Lexemes that will be fed to the rules.
+ */
+export class Input {
 
   /**
    * The tokens that will be used by the lexer to slice
@@ -184,7 +188,7 @@ export const NOMATCH: NoMatch = {}
 
 export function protectLexerState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
   var fn = descriptor.value
-  descriptor.value = function (l: Lexer) {
+  descriptor.value = function (l: Input) {
     l.save()
 
     var res = fn.call(this, l)
@@ -206,7 +210,7 @@ export abstract class Rule<T> {
 
   _name: string
 
-  abstract exec(l: Lexer): T | NoMatch;
+  abstract exec(l: Input): T | NoMatch;
 
   name(name: string): this {
     this._name = name
@@ -240,7 +244,7 @@ export class TokenRule extends Rule<Lexeme> {
     return this
   }
 
-  exec(l: Lexer): Lexeme | NoMatch {
+  exec(l: Input): Lexeme | NoMatch {
     var next = l.peek(!this.is_skip)
     if (next === null || next.token !== this) return NOMATCH
 
@@ -272,7 +276,7 @@ export class TransformRule<T, U> extends Rule<U> {
   }
 
   @protectLexerState
-  exec(l: Lexer): U | NoMatch {
+  exec(l: Input): U | NoMatch {
     var res = this.baserule.exec(l)
     if (res !== NOMATCH)
       return this.tr(res as T)
@@ -289,7 +293,7 @@ export class SequenceRule<T> extends Rule<T> {
   constructor(public subrules: Rule<any>[]) { super() }
 
   @protectLexerState
-  exec(l: Lexer): T | NoMatch {
+  exec(l: Input): T | NoMatch {
     var res: any = []
     var i = 0
     var sub = this.subrules
@@ -325,7 +329,7 @@ export function SequenceOf(...a: Rule<any>[]): SequenceRule<any> {
 
 export class AnyRule extends Rule<Lexeme> {
 
-  exec(l: Lexer): Lexeme | NoMatch {
+  exec(l: Input): Lexeme | NoMatch {
     var next = l.next()
     if (next == null) return NOMATCH
     return next
@@ -339,7 +343,7 @@ export class EitherRule<T> extends Rule<T> {
   constructor(public subrules: Rule<T>[]) { super() }
 
   @protectLexerState
-  exec(s: Lexer): T | NoMatch {
+  exec(s: Input): T | NoMatch {
     for (var sub of this.subrules) {
       var res = sub.exec(s)
       if (res !== NOMATCH) return res
@@ -365,7 +369,7 @@ export class ZeroOrMoreRule<T> extends Rule<T[]> {
   constructor(public rule: Rule<T>) { super() }
 
   @protectLexerState
-  exec(l: Lexer): T[] | NoMatch {
+  exec(l: Input): T[] | NoMatch {
     var res = [] as T[]
     var res2: T | NoMatch
 
@@ -387,7 +391,7 @@ export class LookAheadRule<T> extends Rule<T> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  exec(l: Lexer): T | NoMatch {
+  exec(l: Input): T | NoMatch {
     l.save()
     var res = this.rule.exec(l)
     l.rollback()
@@ -401,7 +405,7 @@ export class NotRule extends Rule<null> {
 
   constructor(public rule: Rule<any>) { super() }
 
-  exec (l: Lexer): null | NoMatch {
+  exec (l: Input): null | NoMatch {
     l.save()
     var res = this.rule.exec(l)
     l.rollback()
@@ -417,7 +421,7 @@ export class OptionalRule<T> extends Rule<T | NoMatch> {
   constructor(public rule: Rule<T>) { super() }
 
   @protectLexerState
-  exec(l: Lexer): T | NoMatch {
+  exec(l: Input): T | NoMatch {
     return this.rule.exec(l)
   }
 
@@ -427,7 +431,7 @@ export class OptionalRule<T> extends Rule<T | NoMatch> {
 export class ForwardRule<T> extends Rule<T> {
   constructor(public def: () => Rule<T>) { super() }
 
-  exec(l: Lexer): T | NoMatch {
+  exec(l: Input): T | NoMatch {
     const rule = this.def()
     return rule.exec(l)
   }
@@ -447,7 +451,7 @@ export class LanguageRule<T> extends Rule<T> {
    * Parse an input string.
    */
   parse(str: string) {
-    const lexer = new Lexer()
+    const lexer = new Input()
     lexer.feed(str)
     lexer.pushTokens(this.tokens)
     var res = this.exec(lexer, true)
@@ -466,7 +470,7 @@ export class LanguageRule<T> extends Rule<T> {
    *          own tokens onto the lexer.
    */
   @protectLexerState
-  exec(l: Lexer, is_toplevel = true): T | NoMatch {
+  exec(l: Input, is_toplevel = true): T | NoMatch {
     if (!is_toplevel) l.pushTokens(this.tokens!)
 
     var res = this.rule.exec(l)
