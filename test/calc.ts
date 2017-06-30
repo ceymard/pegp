@@ -40,4 +40,4 @@ console.log(calc.parse(`
   2 + 3 * 2
   +
 `))
-// console.log(calc.parse('  52 !  '))
+console.log(calc.parse('  52 !  '))

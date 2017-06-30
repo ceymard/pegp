@@ -9,7 +9,8 @@ export class Lexeme {
     public text: string,
     public token: TokenRule,
     public index: number, // starting position in the original string
-    public line: number
+    public line: number,
+    public column: number
   ) {  }
 
   toString() { return this.text }
@@ -38,7 +39,7 @@ export class Input {
    *
    * The last element is the current token list.
    */
-  protected tokens: TokenRule[][] = []
+  protected tokens: TokenRule[] = []
 
   /**
    * All the lexemes that have been found thus far.
@@ -46,9 +47,15 @@ export class Input {
   lexemes: Lexeme[] = []
 
   stack: number[] = []
-  position = -1
+  lex_position = -1
   last_index = 0
+  current_line = 1
+  current_column = 1
   string = ''
+
+  constructor(tokens: TokenRule[]) {
+    this.tokens = tokens
+  }
 
   /**
    * Sets the text this lexer will operate on and
@@ -56,49 +63,39 @@ export class Input {
    */
   feed(str: string): this {
     this.string = str
-    this.position = -1
+    this.lex_position = -1
     this.last_index = 0
+    this.current_line = 1
+    this.current_column = 1
     this.stack = []
 
     return this
   }
 
-  pushTokens(tokens: TokenRule[]) {
-    this.tokens.push(tokens)
-    this.discardNextLexemes()
-  }
-
-  popTokens() {
-    this.tokens.pop()
-    this.discardNextLexemes()
+  clone(tokens: TokenRule[]): Input {
+    var ni = new Input(tokens)
+    ni.feed(this.string)
+    ni.last_index = this.last_index
+    ni.current_line = this.current_line
+    ni.current_column = this.current_column
+    return ni
   }
 
   /**
-   * To be called whenever we push or pop tokens or skip rules, as the currently
-   * parsed lexemes could be different.
+   * Discard what has been parsed until now. Used to free memory
+   * when parsing particularly large files.
    */
-  discardNextLexemes() {
-    if (this.position < this.lexemes.length) {
-      // destroy the supplementary lexemes that we don't need anymore
-      this.lexemes.splice(this.position + 1)
-
-      // reset last index
-      if (this.position > -1) {
-        var last = this.lexemes[this.position]
-        this.last_index = last.index + last.text.length
-      } else {
-        this.last_index = 0
-      }
-    }
+  cut() {
+    throw new Error('not implemented !')
   }
 
   save() {
-    this.stack.push(this.position)
+    this.stack.push(this.lex_position)
   }
 
   rollback() {
     if (this.stack.length === 0) return
-    this.position = this.stack.pop()!
+    this.lex_position = this.stack.pop()!
   }
 
   commit() {
@@ -109,12 +106,15 @@ export class Input {
   /**
    * Advances the lexer to the next non-skipped token. It may not
    * update the position if asked
+   * 
+   * @param update_position Update the internal position in the lexemes array
+   * @param skip if true, return only a non-skippable token
    */
   nextLexeme(update_position = true, skip = true): Lexeme | null {
-    var position = this.position
+    var position = this.lex_position
 
     // Get the current set of tokens
-    const tokens = this.tokens[this.tokens.length - 1]
+    const tokens = this.tokens
 
     const lexemes = this.lexemes
 
@@ -123,10 +123,10 @@ export class Input {
     while (position < lexemes.length - 1) {
       position++
 
-      if (skip && lexemes[position].token.is_skip)
+      if (skip && lexemes[position].token.skippable)
         continue
 
-      if (update_position) this.position = position
+      if (update_position) this.lex_position = position
       return lexemes[position]
     }
 
@@ -138,34 +138,40 @@ export class Input {
         t.regexp.lastIndex = this.last_index
         var match = t.regexp.exec(this.string)
         if (match) {
-          var prev_lexeme = this.lexemes[position]
-          var lines = 0
-          for (var i = 0; i < match[0].length; i++) {
-            if (match[0][i] === '\n') lines++
-          }
           position++
-          var l = new Lexeme(
-            match[0],
-            t,
-            this.last_index,
-            prev_lexeme ? prev_lexeme.line + lines : 1 + lines
-          )
-          this.last_index += match[0].length
-          lexemes.push(l)
-          if (skip && t.is_skip) continue
-          if (update_position) this.position = position
-          return lexemes[position]
+          var l = this.createLexeme(match[0], t)
+          if (skip && t.skippable) continue
+          if (update_position) this.lex_position = position
+          return l
         }
       }
 
       // Getting here is an error, as it means that the last_index is
       // inferior to the string.length and yet we found no token !
       if (this.last_index < this.string.length)
-        throw new Error(`Illegal input '${this.string.slice(this.last_index, 20)}'...`)
+        throw new Error(`Illegal input '${this.string[this.last_index]}'`)
     }
 
-    if (update_position) this.position = position
+    if (update_position) this.lex_position = position
     return null
+  }
+
+  createLexeme(match: string, rule: TokenRule): Lexeme {
+    var lxm = new Lexeme(match, rule, this.last_index, this.current_line, this.current_column)
+
+    for (var i = 0; i < match.length; i++) {
+      if (match[i] === '\n') {
+        this.current_line += 1
+        this.current_column = 1
+      } else {
+        this.current_column++
+      } 
+    }
+  
+    this.last_index += match.length
+    this.lexemes.push(lxm)
+    // Count the lines, store it as last seen lexeme ?
+    return lxm
   }
 
   peek(skip = true): Lexeme|null {
@@ -210,7 +216,7 @@ export abstract class Rule<T> {
 
   _name: string
 
-  abstract exec(l: Input): T | NoMatch;
+  abstract exec(input: Input): T | NoMatch;
 
   name(name: string): this {
     this._name = name
@@ -233,22 +239,22 @@ export abstract class Rule<T> {
  */
 export class TokenRule extends Rule<Lexeme> {
 
-  is_skip: boolean
+  skippable: boolean
 
   constructor(public regexp: RegExp) {
     super()
   }
 
   skip(arg = true): this {
-    this.is_skip = arg
+    this.skippable = arg
     return this
   }
 
   exec(l: Input): Lexeme | NoMatch {
-    var next = l.peek(!this.is_skip)
+    var next = l.peek(!this.skippable)
     if (next === null || next.token !== this) return NOMATCH
 
-    return l.next(!this.is_skip)!
+    return l.next(!this.skippable)!
   }
 
   text() {
@@ -353,17 +359,6 @@ export class EitherRule<T> extends Rule<T> {
 }
 
 
-export function Either<A, B>(a: Rule<A>, b: Rule<B>): Rule<A | B>
-export function Either<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): Rule<A | B | C>
-export function Either<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): Rule<A | B | C | D>
-export function Either<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): Rule<A | B | C | D | E>
-export function Either<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): Rule<A | B | C | D | E | F>
-export function Either<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): Rule<A | B | C | D | E | F | G>
-export function Either(...r: Rule<any>[]): Rule<any> {
-  return new EitherRule(r)
-}
-
-
 export class ZeroOrMoreRule<T> extends Rule<T[]> {
 
   constructor(public rule: Rule<T>) { super() }
@@ -438,49 +433,6 @@ export class ForwardRule<T> extends Rule<T> {
 }
 
 
-export class LanguageRule<T> extends Rule<T> {
-
-  tokens: TokenRule[]
-
-  constructor(public rule: Rule<T>, public list: TokenList) {
-    super()
-    this.tokens = list.tokens
-  }
-
-  /**
-   * Parse an input string.
-   */
-  parse(str: string) {
-    const lexer = new Input()
-    lexer.feed(str)
-    lexer.pushTokens(this.tokens)
-    var res = this.exec(lexer, true)
-    var leftover = lexer.peek()
-
-    if (leftover != null) {
-      throw new Error(`${leftover.line}: unexpected '${leftover.text}'`)
-    }
-    return res
-  }
-
-  /**
-   * @param l The lexer this language will operate on
-   * @param define_tokens if this language was the one that
-   *          called parse. If not, this rule will push its
-   *          own tokens onto the lexer.
-   */
-  @protectLexerState
-  exec(l: Input, is_toplevel = true): T | NoMatch {
-    if (!is_toplevel) l.pushTokens(this.tokens!)
-
-    var res = this.rule.exec(l)
-
-    if (!is_toplevel) l.popTokens()
-    return res
-  }
-
-}
-
 export class TokenList {
   tokens: TokenRule[] = []
 
@@ -498,40 +450,172 @@ export class TokenList {
 }
 
 
-export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
-  return SequenceOf(r, ZeroOrMore(SequenceOf(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
-    .tf(([start, rest]) => [start].concat(rest))
+export class LanguageRule<T> extends Rule<T> {
+
+  tokens: TokenRule[]
+
+  constructor(public rule: Rule<T>, public list: TokenList) {
+    super()
+    this.tokens = list.tokens
+  }
+
+  /**
+   * Parse an input string.
+   */
+  parse(str: string) {
+    const lexer = new Input(this.tokens)
+    lexer.feed(str)
+    var res = this.exec(lexer, true)
+    var leftover = lexer.peek()
+
+    if (leftover != null) {
+      throw new Error(`${leftover.line}: unexpected '${leftover.text}'`)
+    }
+    return res
+  }
+
+  /**
+   * @param l The lexer this language will operate on
+   * @param define_tokens if this language was the one that
+   *          called parse. If not, this rule will push its
+   *          own tokens onto the lexer.
+   */
+  @protectLexerState
+  exec(input: Input, is_toplevel = true): T | NoMatch {
+    // Should we create a new input here ?
+    var final_input = is_toplevel ? input : input.clone(this.tokens)
+    var res = this.rule.exec(final_input)
+
+    // FIXME reintegrate the sub-input into the original one,
+    // maybe check if there is an error there or something ?
+
+    return res
+  }
+
 }
+
 
 export function Language<T>(r: Rule<T>, tokens: TokenList): LanguageRule<T> {
   return new LanguageRule(r, tokens)
 }
 
-export function Optional<T>(r: Rule<T>): OptionalRule<T> {
-  return new OptionalRule(r)
+
+export function Either<A, B>(a: Rule<A>, b: Rule<B>): Rule<A | B>
+export function Either<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): Rule<A | B | C>
+export function Either<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): Rule<A | B | C | D>
+export function Either<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): Rule<A | B | C | D | E>
+export function Either<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): Rule<A | B | C | D | E | F>
+export function Either<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): Rule<A | B | C | D | E | F | G>
+export function Either(...r: Rule<any>[]): Rule<any> {
+  return new EitherRule(r)
 }
 
-export function ZeroOrMore<T>(r: Rule<T>): ZeroOrMoreRule<T> {
-  return new ZeroOrMoreRule(r)
+
+/**
+ * Optionnally match a rule. If it is not present, produces null.
+ * 
+ * @param rule the rule to check
+ */
+export function Optional<T>(rule: Rule<T>): OptionalRule<T> {
+  return new OptionalRule(rule)
 }
 
-export function Forward<T>(def: () => Rule<T>) {
-  return new ForwardRule(def)
+
+/**
+ * Matches a rule any number of times. Its production is
+ * an array of results.
+ * 
+ * @param rule the rule to be matched
+ */
+export function ZeroOrMore<T>(rule: Rule<T>): ZeroOrMoreRule<T> {
+  return new ZeroOrMoreRule(rule)
 }
 
 
+/**
+ * Matches a rule at least one time. Its production is an array
+ * of results.
+ * 
+ * @param rule the rule to be matched
+ */
+export function OneOrMore<T>(rule: Rule<T>): Rule<T[]> {
+  return (new ZeroOrMoreRule(rule)).tf(res => {
+    if (res.length === 0) return NOMATCH
+    return res
+  })
+}
+
+
+/**
+ * Convenience rule to match a list of rules separated by a separator
+ * rule. Produces a list of the matched rules and discards the separators.
+ * 
+ * @param rule The rule we want to match
+ * @param sep A rule that should be present between the rule
+ */
+export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
+  return SequenceOf(r, ZeroOrMore(SequenceOf(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
+    .tf(([start, rest]) => [start].concat(rest))
+}
+
+
+/**
+ * Allows a rule defined later in the code to be used now.
+ * 
+ * If using typescript, you will probably have to manually
+ * type the rule in question (like `const rule: Rule<...> = `),
+ * as the type inferer will choke with recursive rule declarations
+ * and will type it as `Rule<{}>`.
+ * 
+ * @param rule_callback A callback function that returns a rule.
+ */
+export function Forward<T>(rule_callback: () => Rule<T>) {
+  return new ForwardRule(rule_callback)
+}
+
+
+function add_flags(src: RegExp|string): string {
+  if (typeof src === 'string') return 'gy'
+  var flags = src.flags
+  if (flags.indexOf('g') === -1) flags += 'g'
+  if (flags.indexOf('y') === -1) flags += 'y'
+  return flags
+}
+
+/**
+ * Define a token. Using TokenList.add is probably a better
+ * solution than manually defining a token.
+ */
 export function Token(def: string | RegExp): TokenRule {
   return new TokenRule(
-    new RegExp(typeof def === 'string' ? def.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') : def.source, 'gy')
+    new RegExp(typeof def === 'string' ? 
+      def.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') : 
+      def.source, add_flags(def))
   )
 }
 
-export function LookAhead<T>(r: Rule<T>): LookAheadRule<T> {
-  return new LookAheadRule(r)
+
+/**
+ * Use it to check if the given rule matches without actually
+ * consuming it.
+ * 
+ * @param rule the rule to be matched.
+ */
+export function LookAhead<T>(rule: Rule<T>): LookAheadRule<T> {
+  return new LookAheadRule(rule)
 }
 
-export function Not(r: Rule<any>) {
-  return new NotRule(r)
+
+/**
+ * Use it to check that the given rule does not match without
+ * advancing or failing the parse process.
+ * 
+ * Note that this rule produces `null` only.
+ * 
+ * @param rule the rule to be checked
+ */
+export function Not(rule: Rule<any>) {
+  return new NotRule(rule)
 }
 
 export const Any = new AnyRule()
