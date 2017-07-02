@@ -106,7 +106,7 @@ export class Input {
   /**
    * Advances the lexer to the next non-skipped token. It may not
    * update the position if asked
-   * 
+   *
    * @param update_position Update the internal position in the lexemes array
    * @param skip if true, return only a non-skippable token
    */
@@ -165,9 +165,9 @@ export class Input {
         this.current_column = 1
       } else {
         this.current_column++
-      } 
+      }
     }
-  
+
     this.last_index += match.length
     this.lexemes.push(lxm)
     // Count the lines, store it as last seen lexeme ?
@@ -411,13 +411,15 @@ export class NotRule extends Rule<null> {
 }
 
 
-export class OptionalRule<T> extends Rule<T | NoMatch> {
+export class OptionalRule<T> extends Rule<T | null> {
 
   constructor(public rule: Rule<T>) { super() }
 
   @protectLexerState
-  exec(l: Input): T | NoMatch {
-    return this.rule.exec(l)
+  exec(l: Input): T | null | NoMatch {
+    var res = this.rule.exec(l)
+    if (res === NOMATCH) return null
+    return res
   }
 
 }
@@ -513,7 +515,7 @@ export function Either(...r: Rule<any>[]): Rule<any> {
 
 /**
  * Optionnally match a rule. If it is not present, produces null.
- * 
+ *
  * @param rule the rule to check
  */
 export function Optional<T>(rule: Rule<T>): OptionalRule<T> {
@@ -524,7 +526,7 @@ export function Optional<T>(rule: Rule<T>): OptionalRule<T> {
 /**
  * Matches a rule any number of times. Its production is
  * an array of results.
- * 
+ *
  * @param rule the rule to be matched
  */
 export function ZeroOrMore<T>(rule: Rule<T>): ZeroOrMoreRule<T> {
@@ -535,7 +537,7 @@ export function ZeroOrMore<T>(rule: Rule<T>): ZeroOrMoreRule<T> {
 /**
  * Matches a rule at least one time. Its production is an array
  * of results.
- * 
+ *
  * @param rule the rule to be matched
  */
 export function OneOrMore<T>(rule: Rule<T>): Rule<T[]> {
@@ -549,7 +551,7 @@ export function OneOrMore<T>(rule: Rule<T>): Rule<T[]> {
 /**
  * Convenience rule to match a list of rules separated by a separator
  * rule. Produces a list of the matched rules and discards the separators.
- * 
+ *
  * @param rule The rule we want to match
  * @param sep A rule that should be present between the rule
  */
@@ -561,12 +563,12 @@ export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
 
 /**
  * Allows a rule defined later in the code to be used now.
- * 
+ *
  * If using typescript, you will probably have to manually
  * type the rule in question (like `const rule: Rule<...> = `),
  * as the type inferer will choke with recursive rule declarations
  * and will type it as `Rule<{}>`.
- * 
+ *
  * @param rule_callback A callback function that returns a rule.
  */
 export function Forward<T>(rule_callback: () => Rule<T>) {
@@ -588,8 +590,8 @@ function add_flags(src: RegExp|string): string {
  */
 export function Token(def: string | RegExp): TokenRule {
   return new TokenRule(
-    new RegExp(typeof def === 'string' ? 
-      def.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') : 
+    new RegExp(typeof def === 'string' ?
+      def.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') :
       def.source, add_flags(def))
   )
 }
@@ -598,7 +600,7 @@ export function Token(def: string | RegExp): TokenRule {
 /**
  * Use it to check if the given rule matches without actually
  * consuming it.
- * 
+ *
  * @param rule the rule to be matched.
  */
 export function LookAhead<T>(rule: Rule<T>): LookAheadRule<T> {
@@ -609,9 +611,9 @@ export function LookAhead<T>(rule: Rule<T>): LookAheadRule<T> {
 /**
  * Use it to check that the given rule does not match without
  * advancing or failing the parse process.
- * 
+ *
  * Note that this rule produces `null` only.
- * 
+ *
  * @param rule the rule to be checked
  */
 export function Not(rule: Rule<any>) {
