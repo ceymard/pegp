@@ -1,34 +1,36 @@
 
 
 import {
-  SequenceOf, Either, Forward, Rule, ZeroOrMore, Language, TokenList
+  SequenceOf, Either, Rule, ZeroOrMore, Language, TokenList
 } from '../src'
 
 const t = new TokenList()
 t.skip(/[\s\t\n\r ]+/)
 
-const
-  t_num = t.add(/[0-9]+(\.[0-9+])?/),
-  t_plus = t.add('+'),
-  t_minus = t.add('-'),
-  t_star = t.add('*'),
-  t_slash = t.add('/'),
-  t_lparen = t.add('('),
-  t_rparen = t.add(')'),
+const T = {
+  num: t.add(/[0-9]+(\.[0-9+])?/),
+  plus: t.add('+'),
+  minus: t.add('-'),
+  star: t.add('*'),
+  slash: t.add('/'),
+  lparen: t.add('('),
+  rparen: t.add(')')
+}
 
+const
   paren = Either(
-    SequenceOf(t_lparen, Forward(() => add), t_rparen).tf(([lp, add, rp]) => add),
-    t_num.tf(tk => parseFloat(tk.text))
+    SequenceOf(T.lparen, () => add, T.rparen).tf(([lp, add, rp]) => add),
+    T.num.tf(tk => parseFloat(tk.text))
   ),
 
   mult =
-    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(t_star, t_slash), paren)))
+    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(T.star, T.slash), paren)))
                           .tf(([lhs, mults]) =>
                             mults.reduce((lhs, [op, rhs]) => op.is('*') ? lhs * rhs : lhs / rhs, lhs)
                           ),
 
   add: Rule<number> =
-    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(t_plus, t_minus), mult)))
+    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(T.plus, T.minus), mult)))
                           .tf(([lhs, adds]) => {
                             return adds.reduce((acc, [op, rhs]) => op.is('+') ? acc + rhs : acc - rhs, lhs)
                           }),

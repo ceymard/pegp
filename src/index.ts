@@ -234,6 +234,15 @@ export abstract class Rule<T> {
 }
 
 
+export type RuleDecl<T> = (Rule<T> | (() => Rule<T>))
+
+export function declToRule<T>(arg: RuleDecl<T>) {
+  if (typeof arg === 'function')
+    return Forward(arg)
+  return arg
+}
+
+
 /**
  * Matches a given token.
  */
@@ -318,18 +327,18 @@ export class SequenceRule<T> extends Rule<T> {
 }
 
 
-export function SequenceOf<A>(a: Rule<A>): SequenceRule<[A]>
-export function SequenceOf<A, B>(a: Rule<A>, b: Rule<B>): SequenceRule<[A, B]>
-export function SequenceOf<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): SequenceRule<[A, B, C]>
-export function SequenceOf<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): SequenceRule<[A, B, C, D]>
-export function SequenceOf<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): SequenceRule<[A, B, C, D, E]>
-export function SequenceOf<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): SequenceRule<[A, B, C, D, E, F]>
-export function SequenceOf<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): SequenceRule<[A, B, C, D, E, F, G]>
-export function SequenceOf<A, B, C, D, E, F, G, H>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>): SequenceRule<[A, B, C, D, E, F, G, H]>
-export function SequenceOf<A, B, C, D, E, F, G, H, I>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>, I: Rule<I>): SequenceRule<[A, B, C, D, E, F, G, H, I]>
-export function SequenceOf<A, B, C, D, E, F, G, H, I, J>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>, h: Rule<H>, I: Rule<I>, j: Rule<J>): SequenceRule<[A, B, C, D, E, F, G, H, I, J]>
-export function SequenceOf(...a: Rule<any>[]): SequenceRule<any> {
-  return new SequenceRule(a)
+export function SequenceOf<A>(a: RuleDecl<A>): SequenceRule<[A]>
+export function SequenceOf<A, B>(a: RuleDecl<A>, b: RuleDecl<B>): SequenceRule<[A, B]>
+export function SequenceOf<A, B, C>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>): SequenceRule<[A, B, C]>
+export function SequenceOf<A, B, C, D>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>): SequenceRule<[A, B, C, D]>
+export function SequenceOf<A, B, C, D, E>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>): SequenceRule<[A, B, C, D, E]>
+export function SequenceOf<A, B, C, D, E, F>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>): SequenceRule<[A, B, C, D, E, F]>
+export function SequenceOf<A, B, C, D, E, F, G>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>): SequenceRule<[A, B, C, D, E, F, G]>
+export function SequenceOf<A, B, C, D, E, F, G, H>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>): SequenceRule<[A, B, C, D, E, F, G, H]>
+export function SequenceOf<A, B, C, D, E, F, G, H, I>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, I: RuleDecl<I>): SequenceRule<[A, B, C, D, E, F, G, H, I]>
+export function SequenceOf<A, B, C, D, E, F, G, H, I, J>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, I: RuleDecl<I>, j: RuleDecl<J>): SequenceRule<[A, B, C, D, E, F, G, H, I, J]>
+export function SequenceOf(...a: RuleDecl<any>[]): SequenceRule<any> {
+  return new SequenceRule(a.map(declToRule))
 }
 
 
@@ -416,7 +425,7 @@ export class OptionalRule<T> extends Rule<T | null> {
   constructor(public rule: Rule<T>) { super() }
 
   @protectLexerState
-  exec(l: Input): T | null | NoMatch {
+  exec(l: Input): (T | null) | NoMatch {
     var res = this.rule.exec(l)
     if (res === NOMATCH) return null
     return res
@@ -502,14 +511,14 @@ export function Language<T>(r: Rule<T>, tokens: TokenList): LanguageRule<T> {
 }
 
 
-export function Either<A, B>(a: Rule<A>, b: Rule<B>): Rule<A | B>
-export function Either<A, B, C>(a: Rule<A>, b: Rule<B>, c: Rule<C>): Rule<A | B | C>
-export function Either<A, B, C, D>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>): Rule<A | B | C | D>
-export function Either<A, B, C, D, E>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>): Rule<A | B | C | D | E>
-export function Either<A, B, C, D, E, F>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>): Rule<A | B | C | D | E | F>
-export function Either<A, B, C, D, E, F, G>(a: Rule<A>, b: Rule<B>, c: Rule<C>, d: Rule<D>, e: Rule<E>, f: Rule<F>, g: Rule<G>): Rule<A | B | C | D | E | F | G>
-export function Either(...r: Rule<any>[]): Rule<any> {
-  return new EitherRule(r)
+export function Either<A, B>(a: RuleDecl<A>, b: RuleDecl<B>): Rule<A | B>
+export function Either<A, B, C>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>): Rule<A | B | C>
+export function Either<A, B, C, D>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>): Rule<A | B | C | D>
+export function Either<A, B, C, D, E>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>): Rule<A | B | C | D | E>
+export function Either<A, B, C, D, E, F>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>): Rule<A | B | C | D | E | F>
+export function Either<A, B, C, D, E, F, G>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>): Rule<A | B | C | D | E | F | G>
+export function Either(...r: RuleDecl<any>[]): Rule<any> {
+  return new EitherRule(r.map(declToRule))
 }
 
 
@@ -518,8 +527,8 @@ export function Either(...r: Rule<any>[]): Rule<any> {
  *
  * @param rule the rule to check
  */
-export function Optional<T>(rule: Rule<T>): OptionalRule<T> {
-  return new OptionalRule(rule)
+export function Optional<T>(rule: RuleDecl<T>): OptionalRule<T> {
+  return new OptionalRule(declToRule(rule))
 }
 
 
@@ -529,8 +538,8 @@ export function Optional<T>(rule: Rule<T>): OptionalRule<T> {
  *
  * @param rule the rule to be matched
  */
-export function ZeroOrMore<T>(rule: Rule<T>): ZeroOrMoreRule<T> {
-  return new ZeroOrMoreRule(rule)
+export function ZeroOrMore<T>(rule: RuleDecl<T>): ZeroOrMoreRule<T> {
+  return new ZeroOrMoreRule(declToRule(rule))
 }
 
 
@@ -540,8 +549,8 @@ export function ZeroOrMore<T>(rule: Rule<T>): ZeroOrMoreRule<T> {
  *
  * @param rule the rule to be matched
  */
-export function OneOrMore<T>(rule: Rule<T>): Rule<T[]> {
-  return (new ZeroOrMoreRule(rule)).tf(res => {
+export function OneOrMore<T>(rule: RuleDecl<T>): Rule<T[]> {
+  return ZeroOrMore(rule).tf(res => {
     if (res.length === 0) return NOMATCH
     return res
   })
@@ -555,7 +564,7 @@ export function OneOrMore<T>(rule: Rule<T>): Rule<T[]> {
  * @param rule The rule we want to match
  * @param sep A rule that should be present between the rule
  */
-export function List<T>(r: Rule<T>, sep: Rule<any>): Rule<T[]> {
+export function List<T>(r: RuleDecl<T>, sep: RuleDecl<any>): Rule<T[]> {
   return SequenceOf(r, ZeroOrMore(SequenceOf(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
     .tf(([start, rest]) => [start].concat(rest))
 }
@@ -603,8 +612,8 @@ export function Token(def: string | RegExp): TokenRule {
  *
  * @param rule the rule to be matched.
  */
-export function LookAhead<T>(rule: Rule<T>): LookAheadRule<T> {
-  return new LookAheadRule(rule)
+export function LookAhead<T>(rule: RuleDecl<T>): LookAheadRule<T> {
+  return new LookAheadRule(declToRule(rule))
 }
 
 
@@ -616,8 +625,8 @@ export function LookAhead<T>(rule: Rule<T>): LookAheadRule<T> {
  *
  * @param rule the rule to be checked
  */
-export function Not(rule: Rule<any>) {
-  return new NotRule(rule)
+export function Not(rule: RuleDecl<any>) {
+  return new NotRule(declToRule(rule))
 }
 
 export const Any = new AnyRule()
