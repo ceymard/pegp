@@ -273,6 +273,15 @@ export class TokenRule extends Rule<Lexeme> {
     return this
   }
 
+  /**
+   * Find out if the next Lexeme in the input is this TokenRule.
+   * 
+   * If the TokenRule was skippable, then temporarily modify its
+   * skippable status so that the next Lexeme may be a match instead
+   * of being skipped -- we can do it here since if we're on exec()
+   * it means the grammar is specifically asking for this Token even
+   * though it is being skipped the rest of the time.
+   */
   exec(l: Input): Lexeme | NoMatch {
     const old_skip = this.skippable
     this.skippable = false
