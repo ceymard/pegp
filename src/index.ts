@@ -274,10 +274,18 @@ export class TokenRule extends Rule<Lexeme> {
   }
 
   exec(l: Input): Lexeme | NoMatch {
-    var next = l.peek(!this.skippable)
-    if (next === null || next.token !== this) return NOMATCH
+    const old_skip = this.skippable
+    this.skippable = false
+    const peek = l.peek()
+    this.skippable = old_skip
 
-    return l.next(!this.skippable)!
+    if (peek === null || peek.token !== this) return NOMATCH
+
+    this.skippable = false
+    const next = l.next()!
+    this.skippable = old_skip
+
+    return next
   }
 
   text() {
