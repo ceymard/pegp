@@ -237,6 +237,10 @@ export abstract class Rule<T> {
     return new TransformRule(this, fn) // FIXME
   }
 
+  tap(fn: (a: T) => void): Rule<T> {
+    return new TransformRule(this, (a: T) => { fn(a); return a })
+  }
+
   tf<U>(fn: (a: T) => (U | NoMatch)): Rule<U> {
     return new TransformRule(this, fn) // FIXME
   }
