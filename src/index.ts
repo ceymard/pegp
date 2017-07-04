@@ -13,7 +13,7 @@ export class Lexeme {
     public column: number
   ) {  }
 
-  toString() { return this.text }
+  toString() { return `<Lexeme:'${this.text}':${this.line}:${this.column}>` }
 
   is(str: string) {
     return this.text === str
@@ -47,6 +47,7 @@ export class Input {
   lexemes: Lexeme[] = []
 
   stack: number[] = []
+  last_lexeme: Lexeme|null = null
   lex_position = -1
   last_index = 0
   current_line = 1
@@ -134,22 +135,28 @@ export class Input {
     // and need to find more lexemes.
     while (this.last_index < this.string.length) {
 
+      var skipped = false
       for (var t of tokens) {
         t.regexp.lastIndex = this.last_index
         var match = t.regexp.exec(this.string)
         if (match) {
           position++
           var l = this.createLexeme(match[0], t)
-          if (skip && t.skippable) continue
+          if (skip && t.skippable) {
+            skipped = true
+            break
+          }
           if (update_position) this.lex_position = position
           return l
         }
       }
 
+      if (skipped) continue
+
       // Getting here is an error, as it means that the last_index is
       // inferior to the string.length and yet we found no token !
       if (this.last_index < this.string.length)
-        throw new Error(`Illegal input '${this.string[this.last_index]}'`)
+        throw new Error(`Illegal input @${this.current_line}:${this.current_column} '${this.string[this.last_index]}'`)
     }
 
     if (update_position) this.lex_position = position
@@ -175,11 +182,14 @@ export class Input {
   }
 
   peek(skip = true): Lexeme|null {
-    return this.nextLexeme(false, skip)
+    const res = this.nextLexeme(false, skip)
+    if (!this.last_lexeme || res && res.index > this.last_lexeme.index) this.last_lexeme = res
+    return res
   }
 
   next(skip = true): Lexeme|null {
     const res = this.nextLexeme(true, skip)
+    if (!this.last_lexeme || res && res.index > this.last_lexeme.index) this.last_lexeme = res
     return res
   }
 
@@ -342,6 +352,25 @@ export function SequenceOf(...a: RuleDecl<any>[]): SequenceRule<any> {
 }
 
 
+export function LastOf<A>(a: RuleDecl<A>): Rule<A>
+export function LastOf<A, B>(a: RuleDecl<A>, b: RuleDecl<B>): Rule<B>
+export function LastOf<A, B, C>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>): Rule<C>
+export function LastOf<A, B, C, D>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>): Rule<D>
+export function LastOf<A, B, C, D, E>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>): Rule<E>
+export function LastOf<A, B, C, D, E, F>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>): Rule<F>
+export function LastOf<A, B, C, D, E, F, G>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>): Rule<G>
+export function LastOf<A, B, C, D, E, F, G, H>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>): Rule<H>
+export function LastOf<A, B, C, D, E, F, G, H, I>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, I: RuleDecl<I>): Rule<I>
+export function LastOf<A, B, C, D, E, F, G, H, I, J>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, I: RuleDecl<I>, j: RuleDecl<J>): Rule<J>
+export function LastOf(...a: RuleDecl<any>[]): Rule<any> {
+  return new SequenceRule(a.map(declToRule)).tf((res: any[]) => res[res.length - 1])
+}
+
+export function FirstOf<T>(rule: RuleDecl<T>, ...rest: RuleDecl<any>[]): Rule<T>
+export function FirstOf(...a: RuleDecl<any>[]): Rule<any> {
+  return new SequenceRule(a.map(declToRule)).tf((res: any[]) => res[0])
+}
+
 export class AnyRule extends Rule<Lexeme> {
 
   exec(l: Input): Lexeme | NoMatch {
@@ -480,7 +509,8 @@ export class LanguageRule<T> extends Rule<T> {
     var leftover = lexer.peek()
 
     if (leftover != null) {
-      throw new Error(`${leftover.line}: unexpected '${leftover.text}'`)
+      const last = lexer.last_lexeme || leftover
+      throw new Error(`${last.line}:${last.column}: unexpected '${last.text}'`)
     }
     return res
   }
@@ -517,6 +547,9 @@ export function Either<A, B, C, D>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C
 export function Either<A, B, C, D, E>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>): Rule<A | B | C | D | E>
 export function Either<A, B, C, D, E, F>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>): Rule<A | B | C | D | E | F>
 export function Either<A, B, C, D, E, F, G>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>): Rule<A | B | C | D | E | F | G>
+export function Either<A, B, C, D, E, F, G, H>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>): Rule<A | B | C | D | E | F | G | H>
+export function Either<A, B, C, D, E, F, G, H, I>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, i: RuleDecl<I>): Rule<A | B | C | D | E | F | G | H | I>
+export function Either<A, B, C, D, E, F, G, H, I, J>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, i: RuleDecl<I>, j: RuleDecl<J>): Rule<A | B | C | D | E | F | G | H | I | J>
 export function Either(...r: RuleDecl<any>[]): Rule<any> {
   return new EitherRule(r.map(declToRule))
 }
