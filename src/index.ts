@@ -7,6 +7,7 @@ export class Lexeme {
 
   constructor(
     public text: string,
+    public match: RegExpMatchArray,
     public token: TokenRule,
     public index: number, // starting position in the original string
     public line: number,
@@ -141,7 +142,7 @@ export class Input {
         var match = t.regexp.exec(this.string)
         if (match) {
           position++
-          var l = this.createLexeme(match[0], t)
+          var l = this.createLexeme(match, t)
           if (skip && t.skippable) {
             skipped = true
             break
@@ -163,11 +164,12 @@ export class Input {
     return null
   }
 
-  createLexeme(match: string, rule: TokenRule): Lexeme {
-    var lxm = new Lexeme(match, rule, this.last_index, this.current_line, this.current_column)
+  createLexeme(match: RegExpMatchArray, rule: TokenRule): Lexeme {
+    const txt = match[0]
+    var lxm = new Lexeme(txt, match, rule, this.last_index, this.current_line, this.current_column)
 
-    for (var i = 0; i < match.length; i++) {
-      if (match[i] === '\n') {
+    for (var i = 0; i < txt.length; i++) {
+      if (txt[i] === '\n') {
         this.current_line += 1
         this.current_column = 1
       } else {
@@ -175,7 +177,7 @@ export class Input {
       }
     }
 
-    this.last_index += match.length
+    this.last_index += txt.length
     this.lexemes.push(lxm)
     // Count the lines, store it as last seen lexeme ?
     return lxm
