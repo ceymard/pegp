@@ -277,7 +277,7 @@ export class TokenRule extends Rule<Lexeme> {
 
   /**
    * Find out if the next Lexeme in the input is this TokenRule.
-   * 
+   *
    * If the TokenRule was skippable, then temporarily modify its
    * skippable status so that the next Lexeme may be a match instead
    * of being skipped -- we can do it here since if we're on exec()
@@ -319,7 +319,7 @@ export class TokenRule extends Rule<Lexeme> {
 
 export class TransformRule<T, U> extends Rule<U> {
 
-  constructor(public baserule: Rule<T>, public tr: (a: T) => U) {
+  constructor(public baserule: Rule<T>, public tr: ((a: T) => U | NoMatch)) {
     super()
   }
 
@@ -392,6 +392,16 @@ export function LastOf(...a: RuleDecl<any>[]): Rule<any> {
 export function FirstOf<T>(rule: RuleDecl<T>, ...rest: RuleDecl<any>[]): Rule<T>
 export function FirstOf(...a: RuleDecl<any>[]): Rule<any> {
   return new SequenceRule(a.map(declToRule)).tf((res: any[]) => res[0])
+}
+
+export function SecondOf<T>(first: RuleDecl<any>, second: RuleDecl<T>, ...rest: RuleDecl<any>[]): Rule<T>
+export function SecondOf(...a: RuleDecl<any>[]): Rule<any> {
+  return new SequenceRule(a.map(declToRule)).tf((res: any[]) => res[1])
+}
+
+export function ThirdOf<T>(first: RuleDecl<any>, third: RuleDecl<T>, ...rest: RuleDecl<any>[]): Rule<T>
+export function ThirdOf(...a: RuleDecl<any>[]): Rule<any> {
+  return new SequenceRule(a.map(declToRule)).tf((res: any[]) => res[2])
 }
 
 export class AnyRule extends Rule<Lexeme> {
@@ -607,8 +617,7 @@ export function ZeroOrMore<T>(rule: RuleDecl<T>): ZeroOrMoreRule<T> {
  */
 export function OneOrMore<T>(rule: RuleDecl<T>): Rule<T[]> {
   return ZeroOrMore(rule).tf(res => {
-    if (res.length === 0) return NOMATCH
-    return res
+    return (res.length > 0 ? res : NOMATCH) as NoMatch | T[]
   })
 }
 
