@@ -204,21 +204,14 @@ export interface NoMatch { }
 export const NOMATCH: NoMatch = {}
 
 
-export function protectLexerState(target: Rule<any>, prop: string, descriptor: PropertyDescriptor) {
-  var fn = descriptor.value
-  descriptor.value = function (l: Input) {
-    l.save()
-
-    var res = fn.call(this, l)
-
-    if (res === NOMATCH) {
-      l.rollback()
-    } else {
-      l.commit()
-    }
-
-    return res
-  }
+export function protectInputState<T>(input: Input, cbk: () => T): T {
+  input.save()
+  var res = cbk()
+  if (res === NOMATCH)
+    input.rollback()
+  else
+    input.commit()
+  return res
 }
 
 
@@ -261,6 +254,9 @@ export function declToRule<T>(arg: RuleDecl<T>) {
 
 /**
  * Matches a given token.
+ *
+ * It may be declared as skippable. A skippable token may appear anywhere in the input and
+ * be discarded unless it was specifically asked for.
  */
 export class TokenRule extends Rule<Lexeme> {
 
@@ -317,18 +313,22 @@ export class TokenRule extends Rule<Lexeme> {
 }
 
 
+/**
+ * A Rule that transforms its default output.
+ */
 export class TransformRule<T, U> extends Rule<U> {
 
   constructor(public baserule: Rule<T>, public tr: ((a: T) => U | NoMatch)) {
     super()
   }
 
-  @protectLexerState
   exec(l: Input): U | NoMatch {
-    var res = this.baserule.exec(l)
-    if (res !== NOMATCH)
-      return this.tr(res as T)
-    return NOMATCH
+    return protectInputState(l, () => {
+      var res = this.baserule.exec(l)
+      if (res !== NOMATCH)
+        return this.tr(res as T)
+      return NOMATCH
+    })
   }
 }
 
@@ -340,21 +340,22 @@ export class SequenceRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<any>[]) { super() }
 
-  @protectLexerState
   exec(l: Input): T | NoMatch {
-    var res: any = []
-    var i = 0
-    var sub = this.subrules
-    var len = sub.length
+    return protectInputState(l, () => {
+      var res: any = []
+      var i = 0
+      var sub = this.subrules
+      var len = sub.length
 
-    for (var i = 0; i < len; i++) {
-      var r = sub[i]
-      var res2 = r.exec(l)
-      if (res2 === NOMATCH) return NOMATCH
-      res.push(res2)
-    }
+      for (var i = 0; i < len; i++) {
+        var r = sub[i]
+        var res2 = r.exec(l)
+        if (res2 === NOMATCH) return NOMATCH
+        res.push(res2)
+      }
 
-    return res
+      return res
+    })
   }
 
 }
@@ -419,13 +420,14 @@ export class EitherRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<T>[]) { super() }
 
-  @protectLexerState
   exec(s: Input): T | NoMatch {
-    for (var sub of this.subrules) {
-      var res = sub.exec(s)
-      if (res !== NOMATCH) return res
-    }
-    return NOMATCH
+    return protectInputState(s, () => {
+      for (var sub of this.subrules) {
+        var res = sub.exec(s)
+        if (res !== NOMATCH) return res
+      }
+      return NOMATCH
+    })
   }
 }
 
@@ -434,17 +436,18 @@ export class ZeroOrMoreRule<T> extends Rule<T[]> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  @protectLexerState
   exec(l: Input): T[] | NoMatch {
-    var res = [] as T[]
-    var res2: T | NoMatch
+    return protectInputState(l, () => {
+      var res = [] as T[]
+      var res2: T | NoMatch
 
-    while (res2 = this.rule.exec(l)) {
-      if (res2 === NOMATCH) break
-      res.push(res2 as T)
-    }
+      while (res2 = this.rule.exec(l)) {
+        if (res2 === NOMATCH) break
+        res.push(res2 as T)
+      }
 
-    return res
+      return res
+    })
   }
 
 }
@@ -486,11 +489,12 @@ export class OptionalRule<T> extends Rule<T | null> {
 
   constructor(public rule: Rule<T>) { super() }
 
-  @protectLexerState
   exec(l: Input): (T | null) | NoMatch {
-    var res = this.rule.exec(l)
-    if (res === NOMATCH) return null
-    return res
+    return protectInputState(l, () => {
+      var res = this.rule.exec(l)
+      if (res === NOMATCH) return null
+      return res
+    })
   }
 
 }
@@ -554,16 +558,17 @@ export class LanguageRule<T> extends Rule<T> {
    *          called parse. If not, this rule will push its
    *          own tokens onto the lexer.
    */
-  @protectLexerState
   exec(input: Input, is_toplevel = true): T | NoMatch {
-    // Should we create a new input here ?
-    var final_input = is_toplevel ? input : input.clone(this.tokens)
-    var res = this.rule.exec(final_input)
+    return protectInputState(input, () => {
+      // Should we create a new input here ?
+      var final_input = is_toplevel ? input : input.clone(this.tokens)
+      var res = this.rule.exec(final_input)
 
-    // FIXME reintegrate the sub-input into the original one,
-    // maybe check if there is an error there or something ?
+      // FIXME reintegrate the sub-input into the original one,
+      // maybe check if there is an error there or something ?
 
-    return res
+      return res
+    })
   }
 
 }
@@ -630,8 +635,11 @@ export function OneOrMore<T>(rule: RuleDecl<T>): Rule<T[]> {
  * @param sep A rule that should be present between the rule
  */
 export function List<T>(r: RuleDecl<T>, sep: RuleDecl<any>): Rule<T[]> {
-  return SequenceOf(r, ZeroOrMore(SequenceOf(sep, r)).tf(matches => matches.map(([sep, r]) => r)))
-    .tf(([start, rest]) => [start].concat(rest))
+  return SequenceOf(
+    r,
+    ZeroOrMore(SequenceOf(sep, r).tf(([_, r]) => r))
+  )
+  .tf(([start, rest]) => [start].concat(rest))
 }
 
 
