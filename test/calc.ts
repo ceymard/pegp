@@ -18,19 +18,17 @@ const T = {
 }
 
 const
-  paren = Either(
-    SequenceOf(T.lparen, () => add, T.rparen).tf(([lp, add, rp]) => add),
-    T.num.tf(tk => parseFloat(tk.text))
-  ),
+  paren = Either(SequenceOf(T.lparen, () => add, T.rparen).tf(([lp, add, rp]) => add))
+          .Or(T.num.tf(tk => parseFloat(tk.text))),
 
   mult =
-    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(T.star, T.slash), paren)))
+    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(T.star).Or(T.slash), paren)))
                           .tf(([lhs, mults]) =>
                             mults.reduce((lhs, [op, rhs]) => op.is('*') ? lhs * rhs : lhs / rhs, lhs)
                           ),
 
   add: Rule<number> =
-    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(T.plus, T.minus), mult)))
+    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(T.plus).Or(T.minus), mult)))
                           .tf(([lhs, adds]) => {
                             return adds.reduce((acc, [op, rhs]) => op.is('+') ? acc + rhs : acc - rhs, lhs)
                           }),

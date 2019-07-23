@@ -204,6 +204,13 @@ export interface NoMatch { }
 export const NOMATCH: NoMatch = {}
 
 
+/**
+ * Wrap some parsing code to restore the position of the input to before
+ * the call if the result was NOMATCH.
+ *
+ * @param input An input object
+ * @param cbk The code that can fail
+ */
 export function protectInputState<T>(input: Input, cbk: () => T): T {
   input.save()
   var res = cbk()
@@ -245,6 +252,14 @@ export abstract class Rule<T> {
 
 export type RuleDecl<T> = (Rule<T> | (() => Rule<T>))
 
+
+/**
+ * A small helper to transform functions to rules. This is primarily used
+ * when using rules that are defined below to avoid errors and yet still stay
+ * correctly typed.
+ *
+ * @param arg A rule or a function
+ */
 export function declToRule<T>(arg: RuleDecl<T>) {
   if (typeof arg === 'function')
     return Forward(arg)
@@ -416,9 +431,15 @@ export class AnyRule extends Rule<Lexeme> {
 }
 
 
-export class EitherRule<T> extends Rule<T> {
+export class OrRule<T> extends Rule<T> {
 
   constructor(public subrules: Rule<T>[]) { super() }
+
+  Or<U>(r: RuleDecl<U>): OrRule<T | U> {
+    const n = new OrRule<T | U>([...this.subrules, declToRule(r)])
+    n.name(this._name)
+    return n
+  }
 
   exec(s: Input): T | NoMatch {
     return protectInputState(s, () => {
@@ -579,17 +600,8 @@ export function Language<T>(r: Rule<T>, tokens: TokenList): LanguageRule<T> {
 }
 
 
-export function Either<A, B>(a: RuleDecl<A>, b: RuleDecl<B>): Rule<A | B>
-export function Either<A, B, C>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>): Rule<A | B | C>
-export function Either<A, B, C, D>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>): Rule<A | B | C | D>
-export function Either<A, B, C, D, E>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>): Rule<A | B | C | D | E>
-export function Either<A, B, C, D, E, F>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>): Rule<A | B | C | D | E | F>
-export function Either<A, B, C, D, E, F, G>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>): Rule<A | B | C | D | E | F | G>
-export function Either<A, B, C, D, E, F, G, H>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>): Rule<A | B | C | D | E | F | G | H>
-export function Either<A, B, C, D, E, F, G, H, I>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, i: RuleDecl<I>): Rule<A | B | C | D | E | F | G | H | I>
-export function Either<A, B, C, D, E, F, G, H, I, J>(a: RuleDecl<A>, b: RuleDecl<B>, c: RuleDecl<C>, d: RuleDecl<D>, e: RuleDecl<E>, f: RuleDecl<F>, g: RuleDecl<G>, h: RuleDecl<H>, i: RuleDecl<I>, j: RuleDecl<J>): Rule<A | B | C | D | E | F | G | H | I | J>
-export function Either(...r: RuleDecl<any>[]): Rule<any> {
-  return new EitherRule(r.map(declToRule))
+export function Either<T>(r: RuleDecl<T>): OrRule<T> {
+  return new OrRule([declToRule(r)])
 }
 
 
