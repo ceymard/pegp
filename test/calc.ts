@@ -8,27 +8,27 @@ const t = new TokenList()
 t.skip(/[\s\t\n\r ]+/)
 
 const T = {
-  num: t.add(/[0-9]+(\.[0-9+])?/),
-  plus: t.add('+'),
-  minus: t.add('-'),
-  star: t.add('*'),
-  slash: t.add('/'),
-  lparen: t.add('('),
-  rparen: t.add(')')
+  NUM: t.add(/[0-9]+(\.[0-9+])?/),
+  PLUS: t.add('+'),
+  MINUS: t.add('-'),
+  STAR: t.add('*'),
+  SLASH: t.add('/'),
+  LPAREN: t.add('('),
+  RPAREN: t.add(')')
 }
 
 const
-  paren = Either(SequenceOf(T.lparen, () => add, T.rparen).tf(([lp, add, rp]) => add))
-          .Or(T.num.tf(tk => parseFloat(tk.text))),
+  paren = Either(SequenceOf(T.LPAREN, () => add, T.RPAREN).tf(([lp, add, rp]) => add))
+          .Or(T.NUM.tf(tk => parseFloat(tk.text))),
 
   mult =
-    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(T.star).Or(T.slash), paren)))
+    SequenceOf(paren, ZeroOrMore(SequenceOf(Either(T.STAR).Or(T.SLASH), paren)))
                           .tf(([lhs, mults]) =>
                             mults.reduce((lhs, [op, rhs]) => op.is('*') ? lhs * rhs : lhs / rhs, lhs)
                           ),
 
   add: Rule<number> =
-    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(T.plus).Or(T.minus), mult)))
+    SequenceOf(mult, ZeroOrMore(SequenceOf(Either(T.PLUS).Or(T.MINUS), mult)))
                           .tf(([lhs, adds]) => {
                             return adds.reduce((acc, [op, rhs]) => op.is('+') ? acc + rhs : acc - rhs, lhs)
                           }),
