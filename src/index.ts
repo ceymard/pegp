@@ -1,6 +1,56 @@
 
 
 /**
+ * Tag function to create a multiline regexp.
+ * Beware that escaped characters have to be escaped with double backslashes.
+ *
+ * Stolen from here and typed for typescript : https://gist.github.com/shannonmoeller/b4f6fbab2ffec56213e7
+ * Also added the possibility to call it without flags.
+ * This was made by https://gist.github.com/shannonmoeller
+ */
+export function RX(t: TemplateStringsArray, ...values: (RegExp|string|number)[]): RegExp
+export function RX(flags: string): (t: TemplateStringsArray, ...values: (RegExp|string|number)[]) => RegExp
+export function RX(tpl: string | TemplateStringsArray, ...values: (RegExp|string|number)[]) {
+  const trailingComments = /\s+#.*$/gm;
+  const surroundingWhitespace = /^\s+|\s+$/gm;
+  const literalNewlines = /[\r\n]/g;
+
+  var flags: string = ''
+
+  if (typeof tpl !== 'string') {
+    return mkRegExp(tpl, ...values)
+  } else {
+    flags = tpl
+    return mkRegExp
+  }
+
+  function mkRegExp (strings: TemplateStringsArray, ...values: (RegExp|string|number)[]) {
+      function toPattern(pattern: string, rawString: string, i: number) {
+          var value = values[i];
+
+          if (value == null) {
+              return pattern + rawString;
+          }
+
+          if (value instanceof RegExp) {
+              value = value.source;
+          }
+
+          return pattern + rawString + value;
+      }
+
+      const compiledPattern = strings.raw
+          .reduce(toPattern, '')
+          .replace(trailingComments, '')
+          .replace(surroundingWhitespace, '')
+          .replace(literalNewlines, '');
+
+      return new RegExp(compiledPattern, flags);
+  }
+}
+
+
+/**
  * A string holder that keeps track of where it was found in a file.
  */
 export class Lexeme {
